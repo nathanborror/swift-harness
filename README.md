@@ -52,6 +52,14 @@ A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a descr
 
 Sizes are estimated from characters, since no tokenizer is available for an arbitrary model. Set `contextTokens` from the model you use. The newest Claude models treat an edited history as invalidating earlier reasoning, so leave the thresholds high enough that masking only starts when the window is filling.
 
+## Scheduler
+
+`Scheduler` is one scheduler in the harness process; the model is never the timer. Jobs live in a `JobStore` as a JSON file, with every tick recorded in a JSONL run log whether it reached the model or was skipped. A `Job` has a schedule, which is a one-time date, an interval, or a five-field cron expression in a time zone, plus a prompt that should point at a runbook, a fixed tool list, optional active hours, a catch-up policy, limits, and a small scratch checklist the job may rewrite each run.
+
+Guards run before any model call and record why they skipped: disabled, expired, paused, outside active hours, still running, or an empty checklist. A run goes through a `JobRunner`; the default `AgentJobRunner` starts a fresh session with a wake message that carries the current and scheduled times, the unattended contract, and the checklist, and gives the model a `job_respond` tool to end in a named outcome, notify or stay quiet, rewrite the checklist, and ask for its next check within bounds. A reply of `NO_REPLY` is silence. Results and alerts go through a `JobDelivery`; `InboxDelivery` appends them to an inbox file so nothing is lost. Recurring jobs back off after errors, alert after two with a cooldown, and are disabled after ten. One-shots run once and are removed. After downtime, missed runs are coalesced to one or skipped to the next occurrence by policy. `Job.heartbeat(every:)` is the periodic check that usually says nothing.
+
+`ScheduleTool` lets the model add, list, run, and remove jobs. A new job runs once as a visible test, agent-created jobs expire after seven days, and inside a scheduled run the tool can only report on or remove its own job.
+
 ## Sub-agents
 
 `TaskTool` lets the model delegate to a sub-agent: a `SubagentDefinition` with its own model, instructions, and tool set, usually narrower than the parent's. Each call runs a fresh session from the definition and returns only the final reply, so exploration and raw tool output stay out of the parent's context. The brief is the sub-agent's whole context, and the tool description says so. A cap on tool calls per run stops a sub-agent that loops, and every run is logged with its token usage. Because each call makes its own session, parallel tool calls become parallel sub-agents.
@@ -94,6 +102,7 @@ Sources/Harness/
   Context/           # ContextPolicy, masking, compaction
   Runner/            # AgentConfiguration and AgentRunner
   Evals/             # EvalTask, graders, EvalRunner
+  Scheduler/         # Job, JobStore, Scheduler, runners, delivery, cron
 Sources/HarnessCLI/  # the harness executable: run and eval
 evals/tasks/         # starter eval tasks
   Support/           # JSONValue and the server-sent events parser
@@ -154,6 +163,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. Not yet built: background consolidation of notes into the index, and a scheduler for heartbeats. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. Not yet built: background consolidation of notes into the memory index, which is a natural first scheduled job, and wake-on-completion for background commands, which needs background shell support first. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

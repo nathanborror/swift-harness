@@ -46,6 +46,12 @@ A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a descr
 
 `SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles` loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap.
 
+## Context
+
+`ContextManagement` keeps a long session inside the model's window in two stages, under a `ContextPolicy` expressed as fractions of the window. Past the mask threshold, a stateless `historyTransform` replaces old tool outputs in the model's view with a short pointer that says what was elided; the transcript is untouched, the last few outputs stay verbatim, and the cut point moves in batches so the provider cache invalidates rarely. Past the compaction threshold, an `onResponse` hook rewrites the history: the full history is archived under the session's `archive/` folder, durable facts are flushed to today's memory note by a side session, the older part is summarized under a fixed template, and the recent tail, starting at a prompt boundary, is kept verbatim. The summary names the archive path so the model can recover anything the summary lost.
+
+Sizes are estimated from characters, since no tokenizer is available for an arbitrary model. Set `contextTokens` from the model you use. The newest Claude models treat an edited history as invalidating earlier reasoning, so leave the thresholds high enough that masking only starts when the window is filling.
+
 ## Sub-agents
 
 `TaskTool` lets the model delegate to a sub-agent: a `SubagentDefinition` with its own model, instructions, and tool set, usually narrower than the parent's. Each call runs a fresh session from the definition and returns only the final reply, so exploration and raw tool output stay out of the parent's context. The brief is the sub-agent's whole context, and the tool description says so. A cap on tool calls per run stops a sub-agent that loops, and every run is logged with its token usage. Because each call makes its own session, parallel tool calls become parallel sub-agents.
@@ -72,6 +78,7 @@ Sources/Harness/
   Skills/            # SkillCatalog, SkillsInstructions, the skill tool
   Instructions/      # InstructionFiles: AGENTS.md discovery
   Subagents/         # TaskTool and SubagentDefinition
+  Context/           # ContextPolicy, masking, compaction
 Sources/HarnessCLI/  # the harness executable
   Support/           # JSONValue and the server-sent events parser
 Tests/HarnessTests/
@@ -131,6 +138,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, and the runner. Not yet built: a flush of unsaved memory before compaction, background consolidation of notes into the index, a scheduler for heartbeats, and an eval runner with tasks, trials, and graders over the runner's JSON stream. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, and the runner. Not yet built: background consolidation of notes into the index, a scheduler for heartbeats, and an eval runner with tasks, trials, and graders over the runner's JSON stream. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

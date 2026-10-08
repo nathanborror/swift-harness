@@ -16,6 +16,7 @@ public enum HarnessEvent: Codable, Sendable, Equatable {
     case toolResult(tool: String, characters: Int, truncated: Bool, offloadedTo: String?, duration: TimeInterval, failed: Bool)
     case escalation(reason: String)
     case subagent(name: String, description: String?, characters: Int, inputTokens: Int, outputTokens: Int, duration: TimeInterval, failed: Bool)
+    case compaction(archivedTo: String?, droppedEntries: Int, keptEntries: Int, summaryCharacters: Int)
     case note(String)
 }
 

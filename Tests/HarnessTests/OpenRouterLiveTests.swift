@@ -80,3 +80,76 @@ struct OpenRouterLiveTests {
         #expect(second.content.contains("42"))
     }
 }
+
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+struct HarnessLiveTests {
+    struct NeverPrompter: PermissionPrompter {
+        func confirm(_ invocation: ToolInvocation) async -> PermissionResponse { .deny }
+    }
+
+    struct Profile: LanguageModelSession.DynamicProfile {
+        let model: OpenRouterLanguageModel
+        let tools: [any Tool]
+        let directory: SessionDirectory
+        let log: SessionLog
+
+        var body: some LanguageModelSession.DynamicProfile {
+            Profile {
+                Instructions("Be terse. Use get_weather for weather questions. Use delete_file when asked to delete.")
+                tools
+            }
+            .model(model)
+            .logging(to: log)
+            .persistingTranscript(in: directory, log: log)
+        }
+    }
+
+    struct DeleteFileTool: AnnotatedTool {
+        @Generable struct Arguments { var path: String }
+        let name = "delete_file"
+        let description = "Deletes a file at a path"
+        var annotations: ToolAnnotations = .destructive
+        func call(arguments: Arguments) async throws -> String { "deleted \(arguments.path)" }
+    }
+
+    @Test func gatedToolsLogAndPersistThroughAProfile() async throws {
+        let directory = try SessionDirectory(root: FileManager.default.temporaryDirectory.appending(path: "harness-live-\(UUID().uuidString)"))
+        let log = try directory.makeLog()
+        let policy = PermissionPolicy(rules: [.tool("get_weather", .allow), .destructive(.ask)], fallback: .ask)
+        let gate = ToolGate(policy: policy, prompter: NeverPrompter(), shaper: ToolResultShaper(outputsDirectory: directory.outputsURL), log: log)
+        let model = OpenRouterLanguageModel(modelID: "anthropic/claude-haiku-4.5", defaultReasoningEffort: "low", sessionID: directory.sessionID)
+        let session = LanguageModelSession(profile: Profile(
+            model: model,
+            tools: [gate.gate(WeatherTool()), gate.gate(DeleteFileTool())],
+            directory: directory,
+            log: log
+        ))
+
+        let weather = try await session.respond(to: "What is the weather in Oslo?")
+        #expect(weather.content.contains("4") || weather.content.lowercased().contains("rain"))
+
+        let deletion = try await session.respond(to: "Delete the file notes.txt, then tell me in one sentence whether it worked.")
+        #expect(!deletion.content.isEmpty)
+
+        await log.close()
+        let records = try SessionLog.read(url: directory.logURL)
+        var decisions: [PermissionDecision] = []
+        var sawPrompt = false
+        var sawToolOutput = false
+        for record in records {
+            switch record.event {
+            case .permission(_, let decision, _, _, _): decisions.append(decision)
+            case .prompt: sawPrompt = true
+            case .toolOutput: sawToolOutput = true
+            default: break
+            }
+        }
+        #expect(decisions.contains(.allow), "weather tool should be allowed")
+        #expect(decisions.contains(.deny), "delete tool should be denied without consent")
+        #expect(sawPrompt && sawToolOutput)
+
+        let saved = try #require(try directory.loadTranscript())
+        #expect(saved.count == session.transcript.history.count)
+        #expect(saved.contains { if case .toolOutput = $0 { return true } else { return false } })
+    }
+}

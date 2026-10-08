@@ -181,3 +181,48 @@ struct CodingToolsLiveTests {
         #expect(toolNames.contains("edit"))
     }
 }
+
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+struct MemoryAndSkillsLiveTests {
+    struct Profile: LanguageModelSession.DynamicProfile {
+        let model: OpenRouterLanguageModel
+        let tools: [any Tool]
+        let memory: MemoryDirectory
+        let skills: SkillCatalog
+
+        var body: some LanguageModelSession.DynamicProfile {
+            Profile {
+                Instructions("You are a terse assistant. Keep replies to one sentence.")
+                tools
+                SkillsInstructions(catalog: skills)
+                MemoryInstructions(directory: memory)
+            }
+            .model(model)
+        }
+    }
+
+    @Test func modelUsesMemoryAndSkills() async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "harness-ms-live-\(UUID().uuidString)")
+        let memory = try MemoryDirectory(root: base.appending(path: "memory"))
+        let skillsRoot = base.appending(path: "skills/haiku")
+        try FileManager.default.createDirectory(at: skillsRoot, withIntermediateDirectories: true)
+        try "---\nname: haiku\ndescription: Write haiku poems. Use whenever asked for a haiku.\n---\nWrite exactly three lines of five, seven, and five syllables. End the reply with the word 'kigo'.\n".write(to: skillsRoot.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let skills = SkillCatalog.discover(in: [base.appending(path: "skills")])
+        let gate = ToolGate(policy: .allowAll)
+        let model = OpenRouterLanguageModel(modelID: "anthropic/claude-haiku-4.5", defaultReasoningEffort: "low")
+        let session = LanguageModelSession(profile: Profile(model: model, tools: try MemoryTools(directory: memory).gated(by: gate), memory: memory, skills: skills))
+
+        _ = try await session.respond(to: "Remember that my favorite editor is Zed. Save it to memory, then say OK.")
+        let hits = memory.search("zed")
+        #expect(!hits.isEmpty, "the model should have written Zed somewhere in memory")
+
+        let poem = try await session.respond(to: "Write me a haiku about autumn.")
+        #expect(poem.content.lowercased().contains("kigo"), "the skill body should have been loaded and followed")
+        let toolNames = session.transcript.flatMap { entry -> [String] in
+            if case .toolCalls(let calls) = entry { return calls.map(\.toolName) }
+            return []
+        }
+        #expect(toolNames.contains("skill"))
+        #expect(toolNames.contains { $0.hasPrefix("memory_") })
+    }
+}

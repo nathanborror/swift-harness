@@ -19,13 +19,14 @@ public struct ShellTool: AnnotatedTool {
         public var timeoutSeconds: Int?
     }
 
-    public let name = "shell"
+    public let name: String
     public let description = "Runs a command with /bin/sh in the workspace and returns its combined output and exit code. Output is captured in full and bounded afterward, so do not pipe through head or tail. Commands cannot answer interactive prompts. Prefer rg for search."
     public let annotations = ToolAnnotations(isReadOnly: false, isDestructive: false, isOpenWorld: true)
     let context: CodingToolContext
 
-    public init(context: CodingToolContext) {
+    public init(context: CodingToolContext, name: String = "shell") {
         self.context = context
+        self.name = name
     }
 
     public func call(arguments: Arguments) async throws -> String {

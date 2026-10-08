@@ -13,13 +13,14 @@ public struct ReadTool: AnnotatedTool {
         public var limit: Int?
     }
 
-    public let name = "read"
+    public let name: String
     public let description = "Reads a text file as a window of lines, or lists a directory. Large files are paged: the footer says how to continue. Prefer a generous window over many tiny reads."
     public let annotations: ToolAnnotations = .readOnly
     let context: CodingToolContext
 
-    public init(context: CodingToolContext) {
+    public init(context: CodingToolContext, name: String = "read") {
         self.context = context
+        self.name = name
     }
 
     public func call(arguments: Arguments) async throws -> String {

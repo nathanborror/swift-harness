@@ -21,13 +21,14 @@ public struct EditTool: AnnotatedTool {
         public var replaceAll: Bool?
     }
 
-    public let name = "edit"
+    public let name: String
     public let description = "Edits a file by replacing exact text. Each old_text must appear exactly once unless replace_all is set. Read the file first; the edit is refused if the file changed since."
     public let annotations: ToolAnnotations = .mutating
     let context: CodingToolContext
 
-    public init(context: CodingToolContext) {
+    public init(context: CodingToolContext, name: String = "edit") {
         self.context = context
+        self.name = name
     }
 
     public func call(arguments: Arguments) async throws -> String {

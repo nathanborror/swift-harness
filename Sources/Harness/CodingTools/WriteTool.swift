@@ -11,13 +11,14 @@ public struct WriteTool: AnnotatedTool {
         public var content: String
     }
 
-    public let name = "write"
+    public let name: String
     public let description = "Creates a file or replaces its entire contents. Parent folders are created. Use it for new files and complete rewrites; use edit for changes. An existing file must be read before it is overwritten."
     public let annotations: ToolAnnotations = .mutating
     let context: CodingToolContext
 
-    public init(context: CodingToolContext) {
+    public init(context: CodingToolContext, name: String = "write") {
         self.context = context
+        self.name = name
     }
 
     public func call(arguments: Arguments) async throws -> String {

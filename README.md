@@ -34,6 +34,18 @@ Results pass through `ToolResultShaper` before they reach the model. Output over
 
 `CodingTools` provides the built-in set for a workspace: `read`, `edit`, and `write` on every platform, and `shell` on macOS. Read returns a window of lines with a footer that says how to continue, and lists directories. Edit replaces exact text that must appear once, refuses files the model has not read or that changed since, and preserves line endings and byte-order marks. Write creates parents and refuses to overwrite an unread file. Shell runs a fresh `/bin/sh` per call with a fixed environment, merged output, and a kill at the time limit.
 
+## Memory
+
+`MemoryDirectory` is the agent's memory on disk, as plain Markdown: `MEMORY.md` holds the index and curated facts, `USER.md` holds preferences as dated directives, `notes/` holds one append-only file per day, and `topics/` holds one subject per file. `MemoryInstructions` renders the index, the user file, and the last two days of notes into the instructions on every request, each under a hard cap. When a file is over its cap the rendering is cut and says so, and the file on disk is left alone; shortening it is the model's job. Recent notes are framed as untrusted background from earlier sessions.
+
+`MemoryTools` gives the model `memory_read`, `memory_edit`, and `memory_write`, which are the coding tools rooted at the memory folder with the same stale-read rules, plus `memory_note` for appending to today's note and `memory_search` for keyword search that returns a path and line with every hit. The protocol text in the instructions tells the model what to save, what to skip, and to write before its context is lost.
+
+## Skills
+
+A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a description. `SkillCatalog.discover(in:)` scans the roots an app chooses, parses the frontmatter leniently, and lets a later root override an earlier one on a name collision. Which folders to scan is a trust decision the app makes, since a repository's skills are instructions to the agent.
+
+`SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles` loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap.
+
 ## Layout
 
 ```
@@ -43,6 +55,9 @@ Sources/Harness/
   Workspace/         # Workspace: scoped folder and path resolution
   Tools/             # ToolGate, Gated, PermissionPolicy, ToolAnnotations, ToolResultShaper
   CodingTools/       # read, edit, write, shell, and their shared context
+  Memory/            # MemoryDirectory, MemoryInstructions, memory tools
+  Skills/            # SkillCatalog, SkillsInstructions, the skill tool
+  Instructions/      # InstructionFiles: AGENTS.md discovery
   Support/           # JSONValue and the server-sent events parser
 Tests/HarnessTests/
   Fixtures/          # captured OpenRouter streams used by the translator tests
@@ -101,6 +116,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, and the coding tools. Not yet built: memory files and their index, skill discovery, a scheduler for heartbeats, a sub-agent tool, and a headless runner for evals. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, and instruction files. Not yet built: a flush of unsaved memory before compaction, background consolidation of notes into the index, a scheduler for heartbeats, a sub-agent tool, and a headless runner for evals. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

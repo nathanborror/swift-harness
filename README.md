@@ -46,6 +46,19 @@ A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a descr
 
 `SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles` loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap.
 
+## Sub-agents
+
+`TaskTool` lets the model delegate to a sub-agent: a `SubagentDefinition` with its own model, instructions, and tool set, usually narrower than the parent's. Each call runs a fresh session from the definition and returns only the final reply, so exploration and raw tool output stay out of the parent's context. The brief is the sub-agent's whole context, and the tool description says so. A cap on tool calls per run stops a sub-agent that loops, and every run is logged with its token usage. Because each call makes its own session, parallel tool calls become parallel sub-agents.
+
+## Runner
+
+The `harness` executable is a headless runner for macOS: one prompt, the full harness, and the event stream on stdout. It opens a workspace, creates a session directory, loads instruction files, skills, and memory, gates the coding and memory tools, adds a read-only explorer sub-agent, and streams the reply. With `--json` every event is a JSON line, which is what an eval harness or another process reads; without it the output is readable text with tool calls and their first line of output. Permission asks go to the terminal, or are denied when stdin is not one; `--approve` allows everything.
+
+```sh
+swift run harness run --workspace path/to/project "Fix the failing test."
+swift run harness run --workspace . --json --approve "Add a changelog entry."
+```
+
 ## Layout
 
 ```
@@ -58,6 +71,8 @@ Sources/Harness/
   Memory/            # MemoryDirectory, MemoryInstructions, memory tools
   Skills/            # SkillCatalog, SkillsInstructions, the skill tool
   Instructions/      # InstructionFiles: AGENTS.md discovery
+  Subagents/         # TaskTool and SubagentDefinition
+Sources/HarnessCLI/  # the harness executable
   Support/           # JSONValue and the server-sent events parser
 Tests/HarnessTests/
   Fixtures/          # captured OpenRouter streams used by the translator tests
@@ -116,6 +131,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, and instruction files. Not yet built: a flush of unsaved memory before compaction, background consolidation of notes into the index, a scheduler for heartbeats, a sub-agent tool, and a headless runner for evals. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, and the runner. Not yet built: a flush of unsaved memory before compaction, background consolidation of notes into the index, a scheduler for heartbeats, and an eval runner with tasks, trials, and graders over the runner's JSON stream. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

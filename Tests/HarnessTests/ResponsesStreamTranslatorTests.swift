@@ -39,8 +39,10 @@ import Testing
             if case .toolCallMetadata(_, _, _, let values) = event { return values }
             return nil
         }
-        #expect(stored.count == 1)
+        #expect(stored.count == 2, "item metadata, then response metadata on the same call")
         #expect(stored.first?[OpenRouterMetadataKey.itemID]?.stringValue?.hasPrefix("fc_") == true)
+        #expect(stored.last?[OpenRouterMetadataKey.generationID]?.stringValue == "gen-test")
+        #expect(stored.last?[OpenRouterMetadataKey.cost] != nil)
     }
 
     @Test func textStreamProducesDeltasInOrder() throws {

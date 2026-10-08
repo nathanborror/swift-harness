@@ -226,3 +226,24 @@ struct MemoryAndSkillsLiveTests {
         #expect(toolNames.contains { $0.hasPrefix("memory_") })
     }
 }
+
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+struct SubagentLiveTests {
+    @Test func parentDelegatesExplorationToAReadOnlySubagent() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "harness-subagent-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try "The secret word is pomegranate.".write(to: root.appending(path: "secret.txt"), atomically: true, encoding: .utf8)
+        let coding = CodingTools(workspace: try Workspace(root: root))
+        let gate = ToolGate(policy: .allowAll)
+        let model = OpenRouterLanguageModel(modelID: "anthropic/claude-haiku-4.5", defaultReasoningEffort: "low")
+        let explorer = SubagentDefinition(name: "explorer", description: "Reads files in the workspace and reports what they contain.", model: model, instructions: "You can only read files. Report findings only, in one sentence.", tools: [gate.gate(coding.read)])
+        let parent = LanguageModelSession(model: model, tools: [gate.gate(TaskTool(agents: [explorer]))], instructions: "You have no file tools yourself. Delegate any file question to the explorer sub-agent with the task tool, then answer in one sentence.")
+        let response = try await parent.respond(to: "What is the secret word in secret.txt?")
+        #expect(response.content.lowercased().contains("pomegranate"))
+        let parentTools = parent.transcript.flatMap { entry -> [String] in
+            if case .toolCalls(let calls) = entry { return calls.map(\.toolName) }
+            return []
+        }
+        #expect(parentTools == ["task"], "the parent should only have called task, got \(parentTools)")
+    }
+}

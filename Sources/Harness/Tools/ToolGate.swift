@@ -163,9 +163,17 @@ public struct Gated<Base: Tool>: Tool where Base.Arguments: ConvertibleToGenerat
             let text = Self.text(from: output)
             return await gate.shapeResult(text, toolName: base.name, callID: callID, duration: Date().timeIntervalSince(started), failed: false)
         } catch {
-            let text = "Error: \(base.name) failed: \(error.localizedDescription)"
+            let text = "Error: \(base.name) failed: \(Self.describe(error))"
             return await gate.shapeResult(text, toolName: base.name, callID: callID, duration: Date().timeIntervalSince(started), failed: true)
         }
+    }
+
+    /// Unwraps the framework's tool-call wrapper so the model sees the real cause.
+    private static func describe(_ error: any Error) -> String {
+        if let wrapped = error as? LanguageModelSession.ToolCallError {
+            return describe(wrapped.underlyingError)
+        }
+        return error.localizedDescription
     }
 
     private static func text(from output: Base.Output) -> String {

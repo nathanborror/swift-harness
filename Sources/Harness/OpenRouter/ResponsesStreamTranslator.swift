@@ -239,7 +239,17 @@ struct ResponsesStreamTranslator {
             outputTokens: usageJSON?["output_tokens"]?.intValue ?? 0,
             reasoningTokens: usageJSON?["output_tokens_details"]?["reasoning_tokens"]?.intValue ?? 0
         )
-        events.append(.metadata(target, metadata))
+        // A tool-calls entry carries no metadata of its own, so response details
+        // go onto each call instead.
+        if case .toolCalls(let entryID) = target {
+            for (_, state) in items {
+                if case .functionCall(let callID, let name) = state.kind {
+                    events.append(.toolCallMetadata(entryID: entryID, callID: callID, name: name, metadata))
+                }
+            }
+        } else {
+            events.append(.metadata(target, metadata))
+        }
         events.append(.usage(target, usage, metadata))
         return events
     }

@@ -11,10 +11,18 @@ let package = Package(
     ],
     products: [
         .library(name: "Harness", targets: ["Harness"]),
+        .executable(name: "harness", targets: ["HarnessCLI"]),
     ],
     targets: [
         .target(
             name: "Harness",
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .executableTarget(
+            name: "HarnessCLI",
+            dependencies: ["Harness"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

@@ -15,6 +15,7 @@ public enum HarnessEvent: Codable, Sendable, Equatable {
     case permission(tool: String, decision: PermissionDecision, rule: String?, reason: String?, arguments: String)
     case toolResult(tool: String, characters: Int, truncated: Bool, offloadedTo: String?, duration: TimeInterval, failed: Bool)
     case escalation(reason: String)
+    case subagent(name: String, description: String?, characters: Int, inputTokens: Int, outputTokens: Int, duration: TimeInterval, failed: Bool)
     case note(String)
 }
 
@@ -22,6 +23,12 @@ public struct LogRecord: Codable, Sendable, Equatable {
     public let sequence: Int
     public let timestamp: Date
     public let event: HarnessEvent
+
+    public init(sequence: Int, timestamp: Date, event: HarnessEvent) {
+        self.sequence = sequence
+        self.timestamp = timestamp
+        self.event = event
+    }
 }
 
 /// An append-only JSONL log, one record per line.

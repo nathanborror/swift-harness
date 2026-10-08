@@ -121,6 +121,9 @@ public struct AgentRunner: Sendable {
             observer: observer
         )
         let modelID = (configuration.model as? OpenRouterLanguageModel)?.modelID
+        if directory.loadManifest() == nil {
+            try? directory.saveManifest(.init(workspacePath: configuration.workspace.root.path, modelID: modelID))
+        }
         await log.record(.sessionStarted(sessionID: directory.sessionID, modelID: modelID))
         await observer?.event(.sessionStarted(sessionID: directory.sessionID, modelID: modelID))
         let session = LanguageModelSession(profile: profile, history: history.map { Array($0.history) } ?? [])

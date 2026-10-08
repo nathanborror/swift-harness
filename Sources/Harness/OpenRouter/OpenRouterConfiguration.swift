@@ -25,6 +25,9 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
     /// Per-request timeout. Long agent turns can run for minutes, so the default is generous.
     public var timeout: TimeInterval
     public var retry: RetryPolicy
+    /// When set, every request body and raw response is written here, one pair
+    /// of files per attempt, for diagnosing cache misses and rejected fields.
+    public var debugDirectory: URL?
 
     /// How transient failures are retried. A retry happens only before any
     /// output has reached the session; a stream that fails part way is an error.
@@ -49,13 +52,15 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
         credential: Credential = .environment(),
         additionalHeaders: [String: String] = [:],
         timeout: TimeInterval = 600,
-        retry: RetryPolicy = RetryPolicy()
+        retry: RetryPolicy = RetryPolicy(),
+        debugDirectory: URL? = nil
     ) {
         self.baseURL = baseURL
         self.credential = credential
         self.additionalHeaders = additionalHeaders
         self.timeout = timeout
         self.retry = retry
+        self.debugDirectory = debugDirectory
     }
 
     func resolveBearerToken() throws -> String? {

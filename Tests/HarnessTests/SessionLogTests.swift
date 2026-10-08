@@ -46,3 +46,19 @@ import Testing
         #expect(earlier < later)
     }
 }
+
+@Suite struct SessionManifestTests {
+    @Test func manifestRoundTripsAndFindResolvesIDsAndPaths() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "harness-manifest-\(UUID().uuidString)")
+        let directory = try SessionDirectory(root: root)
+        #expect(directory.loadManifest() == nil)
+        let manifest = SessionDirectory.Manifest(workspacePath: "/tmp/ws", modelID: "m", createdAt: Date(timeIntervalSince1970: 1_800_000_000), title: "t")
+        try directory.saveManifest(manifest)
+        #expect(directory.loadManifest() == manifest)
+        #expect(SessionDirectory.find(directory.sessionID, in: root) == nil, "no transcript yet")
+        try directory.saveTranscript(Transcript())
+        #expect(SessionDirectory.find(directory.sessionID, in: root)?.url == directory.url)
+        #expect(SessionDirectory.find(directory.url.path, in: URL(fileURLWithPath: "/nonexistent"))?.url == directory.url)
+        #expect(SessionDirectory.find("nope", in: root) == nil)
+    }
+}

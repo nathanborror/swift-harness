@@ -132,3 +132,36 @@ final class MockTransport: URLProtocol {
         #expect(MockTransport.requests.count == 2)
     }
 }
+
+// Same serialized suite as the retry tests: both script the shared mock transport.
+extension ExecutorRetryTests {
+    @Test func writesRequestResponseAndMetaPerAttempt() async throws {
+        let debug = FileManager.default.temporaryDirectory.appending(path: "harness-debug-\(UUID().uuidString)")
+        MockTransport.reset([
+            .init(status: 503, body: Data(#"{"error":{"code":503,"message":"overloaded"}}"#.utf8)),
+            .init(status: 200, headers: ["x-generation-id": "gen-dump"], body: try Data(contentsOf: #require(Bundle.module.url(forResource: "stream-text", withExtension: "sse", subdirectory: "Fixtures")))),
+        ])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockTransport.self]
+        let openRouter = OpenRouterConfiguration(credential: .apiKey("test"), retry: .init(maximumAttempts: 2, baseDelay: 0.01), debugDirectory: debug)
+        let executor = OpenRouterExecutor(configuration: openRouter, session: URLSession(configuration: configuration))
+        let model = OpenRouterLanguageModel(modelID: "test/model", configuration: openRouter)
+        let channel = LanguageModelExecutorGenerationChannel()
+        let drain = Task { for try await _ in channel {} }
+        defer { drain.cancel() }
+        let request = LanguageModelExecutorGenerationRequest(id: UUID(), transcript: Transcript(entries: [.prompt(.init(segments: [.text(.init(content: "hi"))]))]), enabledTools: [], schema: nil, generationOptions: GenerationOptions(), contextOptions: ContextOptions(), metadata: [:])
+        try await executor.respond(to: request, model: model, streamingInto: channel)
+
+        let files = try FileManager.default.contentsOfDirectory(atPath: debug.path).sorted()
+        #expect(files.filter { $0.hasSuffix(".request.json") }.count == 2, "one request per attempt")
+        #expect(files.filter { $0.hasSuffix(".response.sse") }.count == 2)
+        #expect(files.filter { $0.hasSuffix(".meta.json") }.count == 2)
+        let requestBody = try JSONValue(data: try Data(contentsOf: debug.appending(path: files.first { $0.hasSuffix("-1.request.json") }!)))
+        #expect(requestBody["model"]?.stringValue == "test/model")
+        let meta = try JSONValue(data: try Data(contentsOf: debug.appending(path: files.first { $0.hasSuffix("-2.meta.json") }!)))
+        #expect(meta["status"]?.intValue == 200)
+        #expect(meta["headers"]?["x-generation-id"]?.stringValue == "gen-dump")
+        let sse = try String(contentsOf: debug.appending(path: files.first { $0.hasSuffix("-2.response.sse") }!), encoding: .utf8)
+        #expect(sse.contains("response.completed"))
+    }
+}

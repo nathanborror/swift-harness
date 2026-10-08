@@ -54,6 +54,50 @@ public struct SessionDirectory: Sendable, Hashable {
         self.url = url
     }
 
+    public var manifestURL: URL { url.appending(path: "session.json") }
+
+    /// What a later launch needs to resume this session.
+    public struct Manifest: Codable, Sendable, Equatable {
+        public var workspacePath: String
+        public var modelID: String?
+        public var createdAt: Date
+        public var title: String?
+
+        public init(workspacePath: String, modelID: String?, createdAt: Date = Date(), title: String? = nil) {
+            self.workspacePath = workspacePath
+            self.modelID = modelID
+            self.createdAt = createdAt
+            self.title = title
+        }
+    }
+
+    public func saveManifest(_ manifest: Manifest) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(manifest).write(to: manifestURL, options: [.atomic])
+    }
+
+    public func loadManifest() -> Manifest? {
+        guard let data = try? Data(contentsOf: manifestURL) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(Manifest.self, from: data)
+    }
+
+    /// Finds a session by ID or by path under a root.
+    public static func find(_ reference: String, in root: URL) -> SessionDirectory? {
+        let asPath = URL(fileURLWithPath: reference)
+        if FileManager.default.fileExists(atPath: asPath.appending(path: "transcript.json").path) {
+            return SessionDirectory(existing: asPath)
+        }
+        let candidate = root.appending(path: reference, directoryHint: .isDirectory)
+        if FileManager.default.fileExists(atPath: candidate.appending(path: "transcript.json").path) {
+            return SessionDirectory(existing: candidate)
+        }
+        return nil
+    }
+
     public func makeLog() throws -> SessionLog {
         try SessionLog(url: logURL)
     }

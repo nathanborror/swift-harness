@@ -54,8 +54,10 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         var attempt = 0
         while true {
             attempt += 1
+            let dump = DebugDump(directory: configuration.debugDirectory, requestID: request.id, attempt: attempt)
+            dump.writeRequest(body)
             do {
-                try await performOnce(urlRequest, channel: channel)
+                try await performOnce(urlRequest, channel: channel, dump: dump)
                 return
             } catch let failure as TransientFailure {
                 guard attempt < max(policy.maximumAttempts, 1) else { throw Self.mapped(failure.underlying) }
@@ -68,12 +70,14 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         }
     }
 
-    private func performOnce(_ urlRequest: URLRequest, channel: LanguageModelExecutorGenerationChannel) async throws {
+    private func performOnce(_ urlRequest: URLRequest, channel: LanguageModelExecutorGenerationChannel, dump: DebugDump) async throws {
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
+        let started = Date()
         do {
             (bytes, response) = try await session.bytes(for: urlRequest)
         } catch let error as URLError where Self.isTransient(error) {
+            dump.writeFailure(error, started: started)
             throw TransientFailure(underlying: error, retryAfter: nil)
         }
         guard let http = response as? HTTPURLResponse else {
@@ -82,6 +86,7 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         guard http.statusCode == 200 else {
             var data = Data()
             for try await byte in bytes { data.append(byte) }
+            dump.writeResponse(data, http: http, started: started)
             let error = OpenRouterErrorMapping.error(status: http.statusCode, body: data)
             if Self.transientStatuses.contains(http.statusCode) {
                 throw TransientFailure(underlying: error, retryAfter: Self.retryAfter(http))
@@ -96,6 +101,8 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         // `AsyncBytes.lines` drops empty lines, and a blank line is what ends an
         // SSE event, so the stream is split on newline bytes by hand.
         var buffer: [UInt8] = []
+        var raw = Data()
+        defer { dump.writeResponse(raw, http: http, started: started) }
         func deliver(_ line: String) async throws -> Bool {
             guard let event = parser.feed(line) else { return false }
             if event.data == "[DONE]" { return true }
@@ -107,6 +114,7 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         }
         do {
             for try await byte in bytes {
+                if dump.isEnabled { raw.append(byte) }
                 if byte == 0x0A {
                     if buffer.last == 0x0D { buffer.removeLast() }
                     let line = String(decoding: buffer, as: UTF8.self)
@@ -241,5 +249,49 @@ extension ResponsesStreamTranslator.Event {
             }
         }
         return result
+    }
+}
+
+/// Writes one attempt's request and response to the debug directory, when one is set.
+struct DebugDump: Sendable {
+    let directory: URL?
+    let prefix: String
+
+    init(directory: URL?, requestID: UUID, attempt: Int) {
+        self.directory = directory
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        // Attempts of one request sort together: time, request, attempt.
+        self.prefix = "\(formatter.string(from: Date()))-\(requestID.uuidString.prefix(8).lowercased())-\(attempt)"
+    }
+
+    var isEnabled: Bool { directory != nil }
+
+    func writeRequest(_ body: JSONValue) {
+        guard let directory else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? body.encoded(pretty: true).write(to: directory.appending(path: "\(prefix).request.json"))
+    }
+
+    func writeResponse(_ data: Data, http: HTTPURLResponse, started: Date) {
+        guard let directory else { return }
+        try? data.write(to: directory.appending(path: "\(prefix).response.sse"))
+        let headers = http.allHeaderFields.reduce(into: [String: JSONValue]()) { result, pair in
+            result[String(describing: pair.key).lowercased()] = .string(String(describing: pair.value))
+        }
+        let meta: JSONValue = .object([
+            "status": .number(Double(http.statusCode)),
+            "seconds": .number(Date().timeIntervalSince(started)),
+            "headers": .object(headers),
+        ])
+        try? meta.encoded(pretty: true).write(to: directory.appending(path: "\(prefix).meta.json"))
+    }
+
+    func writeFailure(_ error: any Error, started: Date) {
+        guard let directory else { return }
+        let meta: JSONValue = .object(["error": .string(String(describing: error)), "seconds": .number(Date().timeIntervalSince(started))])
+        try? meta.encoded(pretty: true).write(to: directory.appending(path: "\(prefix).meta.json"))
     }
 }

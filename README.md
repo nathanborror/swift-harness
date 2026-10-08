@@ -12,13 +12,15 @@ The executor resends the full transcript on every request, which is what OpenRou
 
 `OpenRouterModelCatalog` fetches OpenRouter's model list, caches it for a day, and turns a listing into a model value with the right capabilities, a context policy sized to the model's window, and a check that a requested reasoning effort is one the model accepts. The runner uses it when no context size is given and falls back to defaults offline. `harness models <search>` prints the listing with context size, prices, and capabilities.
 
+`OpenRouterConfiguration.debugDirectory` turns on request dumps: every attempt writes its request body, its raw response stream, and a small metadata file with the status, headers, and timing, which is what you read when a cache stops hitting or a provider rejects a field. The command line exposes it as `--debug-dir`.
+
 A transient failure, meaning a rate limit, a server error, a lost connection, or an error chunk before any output, is retried once after a short delay that honors `Retry-After`. A stream that fails after output has reached the session is not retried. A URLSession timeout surfaces as the framework's timeout error.
 
 The credential comes from the `OPENROUTER_API_KEY` environment variable by default. A literal key is available for development, and a no-token mode is for apps that route through their own proxy.
 
 ## Sessions
 
-`SessionDirectory` is the on-disk home of one session: an append-only `events.jsonl`, a saved `transcript.json`, and an `outputs/` folder for oversized tool results. `SessionLog` is an actor that appends `HarnessEvent` records to the JSONL file. A logging failure never stops a reply; the last error is kept on the log for the app to surface.
+`SessionDirectory` is the on-disk home of one session: an append-only `events.jsonl`, a saved `transcript.json`, a `session.json` manifest with the workspace and model so a later launch can resume it, and an `outputs/` folder for oversized tool results. `SessionLog` is an actor that appends `HarnessEvent` records to the JSONL file. A logging failure never stops a reply; the last error is kept on the log for the app to surface.
 
 Both attach to a dynamic profile as modifiers. `.logging(to:)` records every prompt, reasoning entry, response, tool call, and tool output as the session produces them. `.persistingTranscript(in:)` saves the history after each response and tool output, so a quit or crashed app resumes by loading the transcript and creating a new session from it.
 
@@ -58,7 +60,9 @@ A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a descr
 
 `ContextManagement` keeps a long session inside the model's window in two stages, under a `ContextPolicy` expressed as fractions of the window. Past the mask threshold, a stateless `historyTransform` replaces old tool outputs in the model's view with a short pointer that says what was elided; the transcript is untouched, the last few outputs stay verbatim, and the cut point moves in batches so the provider cache invalidates rarely. Past the compaction threshold, an `onResponse` hook rewrites the history: the full history is archived under the session's `archive/` folder, durable facts are flushed to today's memory note by a side session, the older part is summarized under a fixed template, and the recent tail, starting at a prompt boundary, is kept verbatim. The summary names the archive path so the model can recover anything the summary lost. Instructions loaded through the `skill` tool are carried across: the latest output per skill that would otherwise be lost is re-inserted after the summary as a tool call and output pair, under per-skill and total caps, and a skill still in the kept tail is not duplicated. `ContextPolicy.reattachedTools` names the tools this applies to.
 
-Sizes are estimated from characters, since no tokenizer is available for an arbitrary model. Set `contextTokens` from the model you use. The newest Claude models treat an edited history as invalidating earlier reasoning, so leave the thresholds high enough that masking only starts when the window is filling.
+Sizes are estimated from characters, since no tokenizer is available for an arbitrary model. Set `contextTokens` from the model you use, or let the model catalog set it.
+
+Two things were checked live through OpenRouter and are re-checked by the verification suite in the tests. Prompt caching holds across the turns of one session: with a stable prefix over the model's minimum cacheable size, the second and third turns read nearly the whole prefix from the cache. A history with a masked tool output was accepted and answered correctly by Claude Haiku 5.5 and Claude Sonnet 4.6 after reasoning turns, so masking does not trip the reasoning-replay check on those models. Other models should be checked the same way before relying on masking with them.
 
 ## Scheduler
 
@@ -78,9 +82,13 @@ Guards run before any model call and record why they skipped: disabled, expired,
 
 The `harness` executable is the headless front end for macOS. `run` streams one prompt's reply with tool calls and their first line of output, or every event as a JSON line with `--json`, which is what another process reads. Permission asks go to the terminal, or are denied when stdin is not one; `--approve` allows everything.
 
+`sessions` lists saved sessions, and `resume <id> "<prompt>"` continues one from its transcript, reusing the workspace and model from its manifest unless overridden, and appending to the same log.
+
 ```sh
 swift run harness run --workspace path/to/project "Fix the failing test."
 swift run harness run --workspace . --json --approve "Add a changelog entry."
+swift run harness sessions
+swift run harness resume 20261008T062728-93d4f136 "Now add a test for it."
 ```
 
 ## In an app
@@ -199,9 +207,9 @@ Soon:
 - [x] Let `AgentSession` run the heartbeat in its own session, instead of the scheduler's fresh session.
 - [x] Read context size and reasoning support from OpenRouter's models endpoint and set `ContextPolicy` from it.
 - [x] Re-attach loaded skill content after compaction so it is not summarized away.
-- [ ] Add a debug option that dumps raw request bodies, for diagnosing cache misses and rejected fields.
-- [ ] Verify prompt caching over a long session, and verify that masking old tool outputs passes the newest Claude models' reasoning-replay check through OpenRouter.
-- [ ] Add a `resume` command to the CLI.
+- [x] Add a debug option that dumps raw request bodies, for diagnosing cache misses and rejected fields.
+- [x] Verify prompt caching over a long session, and verify that masking old tool outputs passes the newest Claude models' reasoning-replay check through OpenRouter.
+- [x] Add a `resume` command to the CLI.
 
 Later:
 

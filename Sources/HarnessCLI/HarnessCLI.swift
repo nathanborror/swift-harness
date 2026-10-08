@@ -19,6 +19,8 @@ struct HarnessCLI {
             case .run: try await run(options)
             case .eval: try await eval(options)
             case .models: try await models(options)
+            case .resume: try await resume(options)
+            case .sessions: try sessions(options)
             }
         } catch {
             FileHandle.standardError.write(Data("error: \(error.localizedDescription)\n".utf8))
@@ -27,6 +29,37 @@ struct HarnessCLI {
     }
 
     static func run(_ options: Options) async throws {
+        try await run(options, resuming: nil)
+    }
+
+    static func resume(_ options: Options) async throws {
+        let sessionRoot = try options.sessionRoot.map { URL(fileURLWithPath: $0) } ?? SessionDirectory.defaultRoot()
+        let parts = options.prompt.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let reference = parts.first, let directory = SessionDirectory.find(reference, in: sessionRoot) else {
+            throw Options.ParseError(message: "usage: harness resume <session id or path> \"<prompt>\"\nNo session found. List them with: harness sessions")
+        }
+        guard parts.count == 2, !parts[1].isEmpty else { throw Options.ParseError(message: "a prompt is required after the session id") }
+        var options = options
+        options.prompt = parts[1]
+        if let manifest = directory.loadManifest() {
+            if !options.workspaceWasSet { options.workspace = manifest.workspacePath }
+            if !options.modelWasSet, let modelID = manifest.modelID { options.model = modelID }
+        }
+        try await run(options, resuming: directory)
+    }
+
+    static func sessions(_ options: Options) throws {
+        let sessionRoot = try options.sessionRoot.map { URL(fileURLWithPath: $0) } ?? SessionDirectory.defaultRoot()
+        let list = try SessionDirectory.list(in: sessionRoot)
+        guard !list.isEmpty else { print("No sessions under \(sessionRoot.path)"); return }
+        for directory in list.prefix(50) {
+            let manifest = directory.loadManifest()
+            let entries = (try? directory.loadTranscript())?.count ?? 0
+            print("\(directory.sessionID)  \(manifest?.modelID ?? "-")  \(entries) entries  \(manifest?.workspacePath ?? "")")
+        }
+    }
+
+    static func run(_ options: Options, resuming existing: SessionDirectory?) async throws {
         let workspace = try Workspace(root: URL(fileURLWithPath: options.workspace))
         let sessionRoot = try options.sessionRoot.map { URL(fileURLWithPath: $0) } ?? SessionDirectory.defaultRoot()
         let memoryRoot = try options.memory.map { URL(fileURLWithPath: $0) } ?? MemoryDirectory.defaultRoot(project: workspace.root.lastPathComponent)
@@ -34,19 +67,31 @@ struct HarnessCLI {
         if let extra = options.skills { skillRoots.append(URL(fileURLWithPath: extra)) }
 
         let resolved = try await resolveModel(options)
+        var model = resolved.model
+        model.sessionID = existing?.sessionID
+        if let debug = options.debugDirectory { model.executorConfiguration.debugDirectory = URL(fileURLWithPath: debug) }
         let configuration = AgentConfiguration(
-            model: resolved.model,
+            model: model,
             workspace: workspace,
-            sessionRoot: sessionRoot,
+            sessionRoot: existing?.url.deletingLastPathComponent() ?? sessionRoot,
             memory: try MemoryDirectory(root: memoryRoot),
             skillRoots: skillRoots,
-            policy: options.approve ? .allowAll : .default,
+            policy: options.approve ? .allowAll : .coding,
             prompter: options.approve ? nil : ConsolePrompter(),
-            contextPolicy: resolved.contextPolicy
+            contextPolicy: resolved.contextPolicy,
+            sessionID: existing?.sessionID
         )
         let printer = ConsolePrinter(json: options.json)
-        let result = try await AgentRunner(configuration: configuration).run(prompt: options.prompt, observer: printer)
-        await printer.finish(usage: result.usage, directory: result.directory)
+        let history = try existing?.loadTranscript()
+        let assembly = try await AgentRunner(configuration: configuration).makeSession(history: history, observer: printer)
+        var printed = ""
+        for try await snapshot in assembly.session.streamResponse(to: options.prompt) {
+            let text = snapshot.content
+            await printer.text(text.hasPrefix(printed) ? String(text.dropFirst(printed.count)) : "\n" + text)
+            printed = text
+        }
+        await assembly.log.close()
+        await printer.finish(usage: assembly.session.usage, directory: assembly.directory)
     }
 
     static func eval(_ options: Options) async throws {
@@ -226,7 +271,7 @@ struct ConsolePrompter: PermissionPrompter {
 }
 
 struct Options {
-    enum Command { case help, run, eval, models }
+    enum Command { case help, run, resume, sessions, eval, models }
 
     var command: Command = .run
     var workspace = FileManager.default.currentDirectoryPath
@@ -245,9 +290,14 @@ struct Options {
     var output: String? = nil
     var judgeModel: String? = nil
     var refresh = false
+    var debugDirectory: String? = nil
+    var workspaceWasSet = false
+    var modelWasSet = false
 
     static let usage = """
         usage: harness run [options] "<prompt>"
+               harness resume <session id or path> "<prompt>"
+               harness sessions [--session-root <dir>]
                harness eval [options]
                harness models [search] [--refresh] [--json]
 
@@ -269,6 +319,7 @@ struct Options {
           --model <id>           OpenRouter model slug (default: anthropic/claude-sonnet-4.6)
           --effort <level>       reasoning effort: none, low, medium, high, xhigh, max
           --context-tokens <n>   window for masking and compaction (default: from OpenRouter's model list)
+          --debug-dir <dir>      write every request body and raw response there
           --json                 print JSON lines instead of readable text
           --help
 
@@ -287,6 +338,8 @@ struct Options {
         case "run": rest = rest.dropFirst()
         case "eval": options.command = .eval; rest = rest.dropFirst()
         case "models": options.command = .models; rest = rest.dropFirst()
+        case "resume": options.command = .resume; rest = rest.dropFirst()
+        case "sessions": options.command = .sessions; rest = rest.dropFirst()
         case "help": options.command = .help; return options
         default: break
         }
@@ -296,8 +349,9 @@ struct Options {
             case "--help", "-h": options.command = .help
             case "--approve": options.approve = true
             case "--json": options.json = true
-            case "--workspace": options.workspace = try value(&rest, for: argument)
-            case "--model": options.model = try value(&rest, for: argument)
+            case "--workspace": options.workspace = try value(&rest, for: argument); options.workspaceWasSet = true
+            case "--model": options.model = try value(&rest, for: argument); options.modelWasSet = true
+            case "--debug-dir": options.debugDirectory = try value(&rest, for: argument)
             case "--effort": options.effort = try value(&rest, for: argument)
             case "--session-root": options.sessionRoot = try value(&rest, for: argument)
             case "--memory": options.memory = try value(&rest, for: argument)
@@ -315,7 +369,7 @@ struct Options {
             }
         }
         options.prompt = positional.joined(separator: " ")
-        if options.command == .run, options.prompt.isEmpty { throw ParseError(message: "a prompt is required\n\n\(usage)") }
+        if options.command == .run || options.command == .resume, options.prompt.isEmpty { throw ParseError(message: "a prompt is required\n\n\(usage)") }
         return options
     }
 

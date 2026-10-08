@@ -176,3 +176,28 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. The library also builds for the iOS simulator, with the shell tool, background processes, and the process runner left out there. Views are left to the app; the package provides the observable session and prompter they bind to. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.
+
+## TODO
+
+Before first app use:
+
+- [ ] Add a Keychain credential and a token provider to `OpenRouterConfiguration.Credential`; an iOS app cannot read an environment variable.
+- [ ] Run the harness inside a sandboxed app and confirm that the scoped workspace bookmark and `/bin/sh` behave as the App Sandbox docs say.
+- [ ] Ship a default shell rule set that denies known-dangerous patterns such as recursive deletes, pushes, and network fetches.
+- [ ] Retry transient OpenRouter failures once, and map a URLSession timeout to `LanguageModelError.timeout`.
+
+Soon:
+
+- [ ] Let `AgentSession` run the heartbeat in its own session, instead of the scheduler's fresh session.
+- [ ] Read context size and reasoning support from OpenRouter's models endpoint and set `ContextPolicy` from it.
+- [ ] Re-attach loaded skill content after compaction so it is not summarized away.
+- [ ] Add a debug option that dumps raw request bodies, for diagnosing cache misses and rejected fields.
+- [ ] Verify prompt caching over a long session, and verify that masking old tool outputs passes the newest Claude models' reasoning-replay check through OpenRouter.
+- [ ] Add a `resume` command to the CLI.
+
+Later:
+
+- [ ] Edit-tool leniency for whitespace and smart quotes, and a syntax check after edits.
+- [ ] Provenance tags on memory so untrusted tool output is never promoted, and recall counts to gate consolidation.
+- [ ] More eval tasks, a live test of the judge grader, and the regression suite in CI.
+- [ ] Mid-conversation system reminders, once the framework has a slot for them.

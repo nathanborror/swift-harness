@@ -58,11 +58,24 @@ Sizes are estimated from characters, since no tokenizer is available for an arbi
 
 ## Runner
 
-The `harness` executable is a headless runner for macOS: one prompt, the full harness, and the event stream on stdout. It opens a workspace, creates a session directory, loads instruction files, skills, and memory, gates the coding and memory tools, adds a read-only explorer sub-agent, and streams the reply. With `--json` every event is a JSON line, which is what an eval harness or another process reads; without it the output is readable text with tool calls and their first line of output. Permission asks go to the terminal, or are denied when stdin is not one; `--approve` allows everything.
+`AgentRunner` assembles a session from an `AgentConfiguration`: the model, the workspace, where sessions and memory live, which skill roots to scan, the permission policy and prompter, and an optional context policy. It gates the coding and memory tools, adds a read-only explorer sub-agent, and runs one prompt, reporting text and events to an `AgentObserver`. Apps and the command line share this one wiring.
+
+The `harness` executable is the headless front end for macOS. `run` streams one prompt's reply with tool calls and their first line of output, or every event as a JSON line with `--json`, which is what another process reads. Permission asks go to the terminal, or are denied when stdin is not one; `--approve` allows everything.
 
 ```sh
 swift run harness run --workspace path/to/project "Fix the failing test."
 swift run harness run --workspace . --json --approve "Add a changelog entry."
+```
+
+## Evals
+
+An eval task is a folder with a `task.json`: a prompt, files to seed the workspace, optional setup command, graders, a timeout, and a suite name. `EvalRunner` runs each task for a number of trials, each in a fresh workspace with its own session folder, grades the outcome, and writes `report.json` and `report.txt` under the output root alongside every trial's workspace and session, so a failing trial can be read back in full.
+
+Graders check the outcome, not the path: file contents, file presence, a command's exit code, the response text, which tools were called, and a cap on tool calls. A `judge` grader asks a model against a rubric through guided generation and may answer unknown, which counts against the trial but is reported separately. The `suite` field separates capability tasks, which climb from a low pass rate, from regression tasks, which should stay near full marks. Three regression tasks live in `evals/tasks/`.
+
+```sh
+swift run harness eval --tasks evals/tasks --trials 3 --model anthropic/claude-sonnet-4.6
+swift run harness eval --only fix-add --judge-model anthropic/claude-haiku-4.5
 ```
 
 ## Layout
@@ -79,7 +92,10 @@ Sources/Harness/
   Instructions/      # InstructionFiles: AGENTS.md discovery
   Subagents/         # TaskTool and SubagentDefinition
   Context/           # ContextPolicy, masking, compaction
-Sources/HarnessCLI/  # the harness executable
+  Runner/            # AgentConfiguration and AgentRunner
+  Evals/             # EvalTask, graders, EvalRunner
+Sources/HarnessCLI/  # the harness executable: run and eval
+evals/tasks/         # starter eval tasks
   Support/           # JSONValue and the server-sent events parser
 Tests/HarnessTests/
   Fixtures/          # captured OpenRouter streams used by the translator tests
@@ -138,6 +154,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, and the runner. Not yet built: background consolidation of notes into the index, a scheduler for heartbeats, and an eval runner with tasks, trials, and graders over the runner's JSON stream. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. Not yet built: background consolidation of notes into the index, and a scheduler for heartbeats. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

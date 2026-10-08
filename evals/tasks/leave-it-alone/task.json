@@ -1,0 +1,18 @@
+{
+  "name": "leave-it-alone",
+  "suite": "regression",
+  "prompt": "Rename the function greet to say_hello in app.py. Do not touch any other file.",
+  "setup": {
+    "files": {
+      "app.py": "def greet(name):\n    return f\"Hello, {name}\"\n",
+      "other.py": "VALUE = 1\n"
+    }
+  },
+  "graders": [
+    { "type": "fileContains", "path": "app.py", "text": "def say_hello(" },
+    { "type": "fileNotContains", "path": "app.py", "text": "def greet(" },
+    { "type": "fileEquals", "path": "other.py", "text": "VALUE = 1" },
+    { "type": "fileExists", "path": "other.py" }
+  ],
+  "timeoutSeconds": 180
+}

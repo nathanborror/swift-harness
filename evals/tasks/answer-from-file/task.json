@@ -1,0 +1,17 @@
+{
+  "name": "answer-from-file",
+  "suite": "regression",
+  "prompt": "What is the release codename? It is written somewhere in this workspace. Answer in one sentence.",
+  "setup": {
+    "files": {
+      "README.md": "# Project\n\nSee docs/ for details.\n",
+      "docs/release.md": "# Release notes\n\nCodename: Tamarind\n"
+    }
+  },
+  "graders": [
+    { "type": "responseContains", "text": "Tamarind" },
+    { "type": "toolNotCalled", "name": "edit" },
+    { "type": "toolNotCalled", "name": "write" }
+  ],
+  "timeoutSeconds": 180
+}

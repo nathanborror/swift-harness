@@ -1,0 +1,18 @@
+{
+  "name": "fix-add",
+  "suite": "regression",
+  "prompt": "There is a bug in math.py. Fix it and tell me in one sentence what you changed.",
+  "setup": {
+    "files": {
+      "math.py": "def add(a, b):\n    return a - b\n\n\ndef multiply(a, b):\n    return a * b\n"
+    }
+  },
+  "graders": [
+    { "type": "fileContains", "path": "math.py", "text": "return a + b" },
+    { "type": "fileContains", "path": "math.py", "text": "return a * b" },
+    { "type": "toolCalled", "name": "read" },
+    { "type": "toolCalled", "name": "edit" },
+    { "type": "maxToolCalls", "count": 6 }
+  ],
+  "timeoutSeconds": 180
+}

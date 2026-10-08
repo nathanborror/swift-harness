@@ -24,17 +24,38 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
     public var additionalHeaders: [String: String]
     /// Per-request timeout. Long agent turns can run for minutes, so the default is generous.
     public var timeout: TimeInterval
+    public var retry: RetryPolicy
+
+    /// How transient failures are retried. A retry happens only before any
+    /// output has reached the session; a stream that fails part way is an error.
+    public struct RetryPolicy: Hashable, Sendable {
+        /// Total attempts, including the first.
+        public var maximumAttempts: Int
+        /// Delay before the second attempt, doubled each time after, unless the server says otherwise.
+        public var baseDelay: TimeInterval
+        public var maximumDelay: TimeInterval
+
+        public init(maximumAttempts: Int = 2, baseDelay: TimeInterval = 1, maximumDelay: TimeInterval = 30) {
+            self.maximumAttempts = maximumAttempts
+            self.baseDelay = baseDelay
+            self.maximumDelay = maximumDelay
+        }
+
+        public static let none = RetryPolicy(maximumAttempts: 1)
+    }
 
     public init(
         baseURL: URL = URL(string: "https://openrouter.ai/api/v1")!,
         credential: Credential = .environment(),
         additionalHeaders: [String: String] = [:],
-        timeout: TimeInterval = 600
+        timeout: TimeInterval = 600,
+        retry: RetryPolicy = RetryPolicy()
     ) {
         self.baseURL = baseURL
         self.credential = credential
         self.additionalHeaders = additionalHeaders
         self.timeout = timeout
+        self.retry = retry
     }
 
     func resolveBearerToken() throws -> String? {

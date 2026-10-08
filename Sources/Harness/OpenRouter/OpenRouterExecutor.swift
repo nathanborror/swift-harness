@@ -16,16 +16,31 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
     let session: URLSession
 
     public init(configuration: OpenRouterConfiguration) throws {
+        self.init(configuration: configuration, session: nil)
+    }
+
+    /// Tests pass a session with a mock transport.
+    init(configuration: OpenRouterConfiguration, session: URLSession?) {
         self.configuration = configuration
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.timeoutIntervalForRequest = configuration.timeout
-        sessionConfiguration.timeoutIntervalForResource = configuration.timeout
-        sessionConfiguration.waitsForConnectivity = true
-        self.session = URLSession(configuration: sessionConfiguration)
+        if let session {
+            self.session = session
+        } else {
+            let sessionConfiguration = URLSessionConfiguration.ephemeral
+            sessionConfiguration.timeoutIntervalForRequest = configuration.timeout
+            sessionConfiguration.timeoutIntervalForResource = configuration.timeout
+            sessionConfiguration.waitsForConnectivity = true
+            self.session = URLSession(configuration: sessionConfiguration)
+        }
     }
 
     public func prewarm(model: OpenRouterLanguageModel, transcript: Transcript) {
         // A server-backed model has nothing to load ahead of time.
+    }
+
+    /// A failure that is safe to retry because nothing reached the session yet.
+    struct TransientFailure: Error {
+        let underlying: any Error
+        let retryAfter: TimeInterval?
     }
 
     public func respond(
@@ -35,19 +50,49 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
     ) async throws {
         let body = try ResponsesRequestBuilder(model: model).body(for: request)
         let urlRequest = try makeURLRequest(body: body)
-        let (bytes, response) = try await session.bytes(for: urlRequest)
+        let policy = configuration.retry
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                try await performOnce(urlRequest, channel: channel)
+                return
+            } catch let failure as TransientFailure {
+                guard attempt < max(policy.maximumAttempts, 1) else { throw Self.mapped(failure.underlying) }
+                let backoff = min(policy.baseDelay * pow(2, Double(attempt - 1)), policy.maximumDelay)
+                let delay = min(failure.retryAfter ?? backoff, policy.maximumDelay)
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                throw Self.mapped(error)
+            }
+        }
+    }
+
+    private func performOnce(_ urlRequest: URLRequest, channel: LanguageModelExecutorGenerationChannel) async throws {
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: urlRequest)
+        } catch let error as URLError where Self.isTransient(error) {
+            throw TransientFailure(underlying: error, retryAfter: nil)
+        }
         guard let http = response as? HTTPURLResponse else {
             throw OpenRouterError.http(status: 0, code: nil, message: "Non-HTTP response")
         }
         guard http.statusCode == 200 else {
             var data = Data()
             for try await byte in bytes { data.append(byte) }
-            throw OpenRouterErrorMapping.error(status: http.statusCode, body: data)
+            let error = OpenRouterErrorMapping.error(status: http.statusCode, body: data)
+            if Self.transientStatuses.contains(http.statusCode) {
+                throw TransientFailure(underlying: error, retryAfter: Self.retryAfter(http))
+            }
+            throw error
         }
 
         var translator = ResponsesStreamTranslator(generationID: http.value(forHTTPHeaderField: "x-generation-id"))
         var parser = ServerSentEventParser()
         var finished = false
+        var delivered = false
         // `AsyncBytes.lines` drops empty lines, and a blank line is what ends an
         // SSE event, so the stream is split on newline bytes by hand.
         var buffer: [UInt8] = []
@@ -56,28 +101,71 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
             if event.data == "[DONE]" { return true }
             for translated in try translator.handle(data: event.data) {
                 await channel.send(try translated.channelEvent())
+                delivered = true
             }
             return false
         }
-        for try await byte in bytes {
-            if byte == 0x0A {
-                if buffer.last == 0x0D { buffer.removeLast() }
-                let line = String(decoding: buffer, as: UTF8.self)
-                buffer.removeAll(keepingCapacity: true)
-                if try await deliver(line) { finished = true; break }
-            } else {
-                buffer.append(byte)
-            }
-        }
-        if !finished {
-            if !buffer.isEmpty { _ = try await deliver(String(decoding: buffer, as: UTF8.self)) }
-            if let event = parser.flush(), event.data != "[DONE]" {
-                for translated in try translator.handle(data: event.data) {
-                    await channel.send(try translated.channelEvent())
+        do {
+            for try await byte in bytes {
+                if byte == 0x0A {
+                    if buffer.last == 0x0D { buffer.removeLast() }
+                    let line = String(decoding: buffer, as: UTF8.self)
+                    buffer.removeAll(keepingCapacity: true)
+                    if try await deliver(line) { finished = true; break }
+                } else {
+                    buffer.append(byte)
                 }
             }
+            if !finished {
+                if !buffer.isEmpty { _ = try await deliver(String(decoding: buffer, as: UTF8.self)) }
+                if let event = parser.flush(), event.data != "[DONE]" {
+                    for translated in try translator.handle(data: event.data) {
+                        await channel.send(try translated.channelEvent())
+                        delivered = true
+                    }
+                }
+            }
+            try translator.finish()
+        } catch where !delivered {
+            // Nothing reached the session: a failed or empty stream can be retried.
+            if let error = error as? URLError, Self.isTransient(error) {
+                throw TransientFailure(underlying: error, retryAfter: nil)
+            }
+            if error is OpenRouterError {
+                throw TransientFailure(underlying: error, retryAfter: nil)
+            }
+            throw error
         }
-        try translator.finish()
+    }
+
+    static let transientStatuses: Set<Int> = [408, 409, 425, 429, 500, 502, 503, 504]
+
+    static func isTransient(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet, .resourceUnavailable, .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func retryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
+        guard let header = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
+        if let seconds = TimeInterval(header.trimmingCharacters(in: .whitespaces)) { return max(seconds, 0) }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        if let date = formatter.date(from: header) { return max(date.timeIntervalSinceNow, 0) }
+        return nil
+    }
+
+    /// Gives a URL timeout the framework's vocabulary so callers handle it like any other model timeout.
+    static func mapped(_ error: any Error) -> any Error {
+        if let urlError = error as? URLError, urlError.code == .timedOut {
+            return LanguageModelError.timeout(.init(debugDescription: urlError.localizedDescription, metadata: ["code": urlError.code.rawValue]))
+        }
+        return error
     }
 
     func makeURLRequest(body: JSONValue) throws -> URLRequest {

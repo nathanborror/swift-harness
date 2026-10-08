@@ -12,6 +12,8 @@ The executor resends the full transcript on every request, which is what OpenRou
 
 `OpenRouterModelCatalog` fetches OpenRouter's model list, caches it for a day, and turns a listing into a model value with the right capabilities, a context policy sized to the model's window, and a check that a requested reasoning effort is one the model accepts. The runner uses it when no context size is given and falls back to defaults offline. `harness models <search>` prints the listing with context size, prices, and capabilities.
 
+A transient failure, meaning a rate limit, a server error, a lost connection, or an error chunk before any output, is retried once after a short delay that honors `Retry-After`. A stream that fails after output has reached the session is not retried. A URLSession timeout surfaces as the framework's timeout error.
+
 The credential comes from the `OPENROUTER_API_KEY` environment variable by default. A literal key is available for development, and a no-token mode is for apps that route through their own proxy.
 
 ## Sessions
@@ -29,6 +31,8 @@ On macOS, child processes inherit the app's sandbox. There is no nested profile;
 ## Tools
 
 `ToolGate` wraps any framework tool with `gate(_:)`. The wrapper keeps the tool's name, description, and schema, so the model sees no difference, and every call passes through a `PermissionPolicy`: an ordered rule list with a fallback, where the first matching rule wins. Rules match by tool name, by a predicate on a string argument, or by annotations a tool declares through `AnnotatedTool`: read-only, destructive, or open-world. The default policy allows read-only tools and asks for everything else.
+
+`ShellRules` is the shipped rule set for the shell: a deny list for the dangerous patterns such as privilege escalation, recursive deletes of the root or home, disk writes, piping a download into a shell, and force pushes; an ask list for the hard-to-reverse and network-reaching ones such as recursive deletes, pushes, discarding git work, installs, and infrastructure commands; and allow for the rest. It is a tripwire, not a boundary, since a command can be written to slip past any pattern; the boundary is the sandbox and the workspace. `PermissionPolicy.coding` combines it with read-only allowed and edits asking, and `.unattended` turns the asks into denials for runs with nobody present.
 
 An `ask` goes to a `PermissionPrompter` the app supplies, with allow-once, allow-always, and deny. A denial, and a tool that throws, return to the model as tool output so the loop continues. Only repeated denials escalate, by throwing `ToolGateError.escalation` and ending the turn. Every decision is logged.
 
@@ -185,8 +189,8 @@ Before first app use:
 
 - [ ] Add a Keychain credential and a token provider to `OpenRouterConfiguration.Credential`; an iOS app cannot read an environment variable.
 - [ ] Run the harness inside a sandboxed app and confirm that the scoped workspace bookmark and `/bin/sh` behave as the App Sandbox docs say.
-- [ ] Ship a default shell rule set that denies known-dangerous patterns such as recursive deletes, pushes, and network fetches.
-- [ ] Retry transient OpenRouter failures once, and map a URLSession timeout to `LanguageModelError.timeout`.
+- [x] Ship a default shell rule set that denies known-dangerous patterns such as recursive deletes, pushes, and network fetches.
+- [x] Retry transient OpenRouter failures once, and map a URLSession timeout to `LanguageModelError.timeout`.
 
 Soon:
 

@@ -9,6 +9,7 @@ public enum OpenRouterError: Error, Sendable, LocalizedError {
     case streamFailed(message: String)
     case malformedEvent(String)
     case noOutput
+    case unsupportedEffort(model: String, effort: String, supported: [String])
 
     public var errorDescription: String? {
         switch self {
@@ -23,6 +24,8 @@ public enum OpenRouterError: Error, Sendable, LocalizedError {
             return "Malformed stream event: \(detail)"
         case .noOutput:
             return "The response completed without any output items."
+        case .unsupportedEffort(let model, let effort, let supported):
+            return "\(model) does not accept reasoning effort \(effort); it supports \(supported.joined(separator: ", "))."
         }
     }
 }

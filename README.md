@@ -10,6 +10,8 @@ The design follows the five guides in `Research/`, which survey how production h
 
 The executor resends the full transcript on every request, which is what OpenRouter needs since it stores nothing between calls. Transcript entries map one to one onto Responses items. Reasoning items come back with a signature and are replayed verbatim from a raw copy kept in entry metadata, so provider state survives across tool calls. Usage, cost, and the generation ID land in `session.usage` and entry metadata.
 
+`OpenRouterModelCatalog` fetches OpenRouter's model list, caches it for a day, and turns a listing into a model value with the right capabilities, a context policy sized to the model's window, and a check that a requested reasoning effort is one the model accepts. The runner uses it when no context size is given and falls back to defaults offline. `harness models <search>` prints the listing with context size, prices, and capabilities.
+
 The credential comes from the `OPENROUTER_API_KEY` environment variable by default. A literal key is available for development, and a no-token mode is for apps that route through their own proxy.
 
 ## Sessions
@@ -189,7 +191,7 @@ Before first app use:
 Soon:
 
 - [ ] Let `AgentSession` run the heartbeat in its own session, instead of the scheduler's fresh session.
-- [ ] Read context size and reasoning support from OpenRouter's models endpoint and set `ContextPolicy` from it.
+- [x] Read context size and reasoning support from OpenRouter's models endpoint and set `ContextPolicy` from it.
 - [ ] Re-attach loaded skill content after compaction so it is not summarized away.
 - [ ] Add a debug option that dumps raw request bodies, for diagnosing cache misses and rejected fields.
 - [ ] Verify prompt caching over a long session, and verify that masking old tool outputs passes the newest Claude models' reasoning-replay check through OpenRouter.

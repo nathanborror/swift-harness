@@ -18,6 +18,7 @@ struct HarnessCLI {
             case .help: print(Options.usage)
             case .run: try await run(options)
             case .eval: try await eval(options)
+            case .models: try await models(options)
             }
         } catch {
             FileHandle.standardError.write(Data("error: \(error.localizedDescription)\n".utf8))
@@ -32,15 +33,16 @@ struct HarnessCLI {
         var skillRoots = SkillCatalog.conventionalRoots(workspace: workspace)
         if let extra = options.skills { skillRoots.append(URL(fileURLWithPath: extra)) }
 
+        let resolved = try await resolveModel(options)
         let configuration = AgentConfiguration(
-            model: model(options, sessionID: nil),
+            model: resolved.model,
             workspace: workspace,
             sessionRoot: sessionRoot,
             memory: try MemoryDirectory(root: memoryRoot),
             skillRoots: skillRoots,
             policy: options.approve ? .allowAll : .default,
             prompter: options.approve ? nil : ConsolePrompter(),
-            contextPolicy: options.contextTokens.map { ContextPolicy(contextTokens: $0) }
+            contextPolicy: resolved.contextPolicy
         )
         let printer = ConsolePrinter(json: options.json)
         let result = try await AgentRunner(configuration: configuration).run(prompt: options.prompt, observer: printer)
@@ -54,19 +56,17 @@ struct HarnessCLI {
         guard !selected.isEmpty else { throw Options.ParseError(message: "no tasks found under \(tasksRoot.path)") }
         let outputRoot = URL(fileURLWithPath: options.output ?? "evals/results")
         let judge: (any LanguageModel)? = options.judgeModel.map { OpenRouterLanguageModel(modelID: $0, defaultReasoningEffort: "low") }
-        let modelID = options.model
-        let effort = options.effort
-        let contextTokens = options.contextTokens
+        let resolved = try await resolveModel(options)
         let runner = EvalRunner(outputRoot: outputRoot, judge: judge) { workspace, sessionRoot in
             AgentConfiguration(
-                model: OpenRouterLanguageModel(modelID: modelID, defaultReasoningEffort: effort),
+                model: resolved.model,
                 workspace: workspace,
                 sessionRoot: sessionRoot,
                 memory: nil,
                 skillRoots: [],
                 policy: .allowAll,
                 prompter: nil,
-                contextPolicy: contextTokens.map { ContextPolicy(contextTokens: $0) }
+                contextPolicy: resolved.contextPolicy
             )
         }
         let json = options.json
@@ -84,8 +84,52 @@ struct HarnessCLI {
         }
     }
 
-    private static func model(_ options: Options, sessionID: String?) -> OpenRouterLanguageModel {
-        OpenRouterLanguageModel(modelID: options.model, defaultReasoningEffort: options.effort, sessionID: sessionID)
+    /// Builds the model from OpenRouter's catalog when it can be reached, so
+    /// capabilities and the context window come from the listing. Offline, it
+    /// falls back to defaults and says so.
+    static func resolveModel(_ options: Options) async throws -> (model: OpenRouterLanguageModel, contextPolicy: ContextPolicy?) {
+        let catalog = OpenRouterModelCatalog()
+        let info: OpenRouterModelInfo?
+        do {
+            info = try await catalog.info(for: options.model)
+        } catch {
+            // Offline or the listing failed: run with defaults rather than refuse.
+            FileHandle.standardError.write(Data("note: could not read OpenRouter's model list (\(error.localizedDescription)); using defaults\n".utf8))
+            return (OpenRouterLanguageModel(modelID: options.model, defaultReasoningEffort: options.effort), options.contextTokens.map { ContextPolicy(contextTokens: $0) })
+        }
+        if info == nil {
+            FileHandle.standardError.write(Data("note: \(options.model) is not in OpenRouter's model list; using default capabilities\n".utf8))
+        }
+        // A listed model that rejects the requested effort is a hard error with a clear message.
+        let model = try await catalog.makeModel(options.model, defaultReasoningEffort: options.effort)
+        let policy = options.contextTokens.map { ContextPolicy(contextTokens: $0) } ?? info?.contextPolicy()
+        return (model, policy)
+    }
+
+    static func models(_ options: Options) async throws {
+        let catalog = OpenRouterModelCatalog()
+        let all = try await catalog.all(forceRefresh: options.refresh)
+        let needle = options.prompt.lowercased()
+        let matching = all.filter { needle.isEmpty || $0.id.lowercased().contains(needle) || ($0.name ?? "").lowercased().contains(needle) }
+        if options.json {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            for model in matching {
+                if let data = try? encoder.encode(model) { print(String(decoding: data, as: UTF8.self)) }
+            }
+            return
+        }
+        print("model                                        context    in $/M   out $/M  tools  json  reason  image  efforts")
+        for model in matching {
+            let id = model.id.padding(toLength: 44, withPad: " ", startingAt: 0)
+            let context = String(model.contextLength ?? 0).padding(toLength: 10, withPad: " ", startingAt: 0)
+            let input = model.pricing?.promptPerMillion.map { String(format: "%7.2f", $0) } ?? "      -"
+            let output = model.pricing?.completionPerMillion.map { String(format: "%8.2f", $0) } ?? "       -"
+            func flag(_ value: Bool) -> String { value ? "yes  " : "no   " }
+            let efforts = model.reasoning?.supportedEfforts?.joined(separator: ",") ?? "-"
+            print("\(id) \(context) \(input) \(output)  \(flag(model.supportsTools)) \(flag(model.supportsStructuredOutputs)) \(flag(model.supportsReasoning))  \(flag(model.supportsImages)) \(efforts)")
+        }
+        print("\n\(matching.count) of \(all.count) models")
     }
 }
 
@@ -182,7 +226,7 @@ struct ConsolePrompter: PermissionPrompter {
 }
 
 struct Options {
-    enum Command { case help, run, eval }
+    enum Command { case help, run, eval, models }
 
     var command: Command = .run
     var workspace = FileManager.default.currentDirectoryPath
@@ -200,10 +244,12 @@ struct Options {
     var trials = 1
     var output: String? = nil
     var judgeModel: String? = nil
+    var refresh = false
 
     static let usage = """
         usage: harness run [options] "<prompt>"
                harness eval [options]
+               harness models [search] [--refresh] [--json]
 
         run options:
           --workspace <dir>      folder the agent may work in (default: current directory)
@@ -222,7 +268,7 @@ struct Options {
         shared options:
           --model <id>           OpenRouter model slug (default: anthropic/claude-sonnet-4.6)
           --effort <level>       reasoning effort: none, low, medium, high, xhigh, max
-          --context-tokens <n>   enable masking and compaction for a window of n tokens
+          --context-tokens <n>   window for masking and compaction (default: from OpenRouter's model list)
           --json                 print JSON lines instead of readable text
           --help
 
@@ -240,6 +286,7 @@ struct Options {
         switch rest.first {
         case "run": rest = rest.dropFirst()
         case "eval": options.command = .eval; rest = rest.dropFirst()
+        case "models": options.command = .models; rest = rest.dropFirst()
         case "help": options.command = .help; return options
         default: break
         }
@@ -261,6 +308,7 @@ struct Options {
             case "--trials": options.trials = Int(try value(&rest, for: argument)) ?? 1
             case "--output": options.output = try value(&rest, for: argument)
             case "--judge-model": options.judgeModel = try value(&rest, for: argument)
+            case "--refresh": options.refresh = true
             default:
                 if argument.hasPrefix("--") { throw ParseError(message: "unknown option \(argument)\n\n\(usage)") }
                 positional.append(argument)

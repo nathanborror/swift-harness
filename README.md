@@ -56,7 +56,7 @@ A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a descr
 
 ## Context
 
-`ContextManagement` keeps a long session inside the model's window in two stages, under a `ContextPolicy` expressed as fractions of the window. Past the mask threshold, a stateless `historyTransform` replaces old tool outputs in the model's view with a short pointer that says what was elided; the transcript is untouched, the last few outputs stay verbatim, and the cut point moves in batches so the provider cache invalidates rarely. Past the compaction threshold, an `onResponse` hook rewrites the history: the full history is archived under the session's `archive/` folder, durable facts are flushed to today's memory note by a side session, the older part is summarized under a fixed template, and the recent tail, starting at a prompt boundary, is kept verbatim. The summary names the archive path so the model can recover anything the summary lost.
+`ContextManagement` keeps a long session inside the model's window in two stages, under a `ContextPolicy` expressed as fractions of the window. Past the mask threshold, a stateless `historyTransform` replaces old tool outputs in the model's view with a short pointer that says what was elided; the transcript is untouched, the last few outputs stay verbatim, and the cut point moves in batches so the provider cache invalidates rarely. Past the compaction threshold, an `onResponse` hook rewrites the history: the full history is archived under the session's `archive/` folder, durable facts are flushed to today's memory note by a side session, the older part is summarized under a fixed template, and the recent tail, starting at a prompt boundary, is kept verbatim. The summary names the archive path so the model can recover anything the summary lost. Instructions loaded through the `skill` tool are carried across: the latest output per skill that would otherwise be lost is re-inserted after the summary as a tool call and output pair, under per-skill and total caps, and a skill still in the kept tail is not duplicated. `ContextPolicy.reattachedTools` names the tools this applies to.
 
 Sizes are estimated from characters, since no tokenizer is available for an arbitrary model. Set `contextTokens` from the model you use. The newest Claude models treat an edited history as invalidating earlier reasoning, so leave the thresholds high enough that masking only starts when the window is filling.
 
@@ -86,6 +86,8 @@ swift run harness run --workspace . --json --approve "Add a changelog entry."
 ## In an app
 
 `AgentSession` is the object a SwiftUI app observes. It is a main-actor `@Observable` class that owns the framework session across turns, so views read `session.transcript` and `session.isResponding` from the framework directly, and adds what the framework does not expose: the reply streaming in, recent harness activity, token usage, the last error, and a `cancel()`. It starts from a configuration and can resume from a transcript saved by an earlier session.
+
+`AgentSession.jobRunner` lets the scheduler run the heartbeat in this session, with the conversation as context, rather than in a fresh one. The wake message runs as a turn whose prompt carries the job ID in its metadata, so a view can hide it with `AgentSession.isJobPrompt`, and the response tool is available so the run ends in a named outcome. When a turn is already running the tick is skipped, not failed, and any events it carried wait for the next tick.
 
 `UIPermissionPrompter` turns an ask into state: the gate parks a request on `pending`, the view renders it, and `respond(_:)` resumes the tool call with allow once, allow always, or deny. Asks are served one at a time, and one that nobody answers within the timeout is denied, so a waiting tool call always ends.
 
@@ -194,9 +196,9 @@ Before first app use:
 
 Soon:
 
-- [ ] Let `AgentSession` run the heartbeat in its own session, instead of the scheduler's fresh session.
+- [x] Let `AgentSession` run the heartbeat in its own session, instead of the scheduler's fresh session.
 - [x] Read context size and reasoning support from OpenRouter's models endpoint and set `ContextPolicy` from it.
-- [ ] Re-attach loaded skill content after compaction so it is not summarized away.
+- [x] Re-attach loaded skill content after compaction so it is not summarized away.
 - [ ] Add a debug option that dumps raw request bodies, for diagnosing cache misses and rejected fields.
 - [ ] Verify prompt caching over a long session, and verify that masking old tool outputs passes the newest Claude models' reasoning-replay check through OpenRouter.
 - [ ] Add a `resume` command to the CLI.

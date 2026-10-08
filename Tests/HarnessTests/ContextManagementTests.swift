@@ -100,3 +100,60 @@ import Testing
         #expect(!compactions.isEmpty)
     }
 }
+
+@Suite struct ReattachmentTests {
+    private func skillPair(_ id: String, name: String, body: String) -> [Transcript.Entry] {
+        [
+            .toolCalls(.init(id: "tc-\(id)", [Transcript.ToolCall(id: id, toolName: "skill", arguments: (try? GeneratedContent(json: #"{"name":"\#(name)"}"#)) ?? GeneratedContent(""))])),
+            .toolOutput(.init(id: id, toolName: "skill", segments: [.text(.init(content: body))])),
+        ]
+    }
+
+    private func turn(_ index: Int) -> [Transcript.Entry] {
+        [.prompt(.init(id: "p\(index)", segments: [.text(.init(content: "step \(index)"))])), .response(.init(id: "r\(index)", segments: [.text(.init(content: "done \(index)"))]))]
+    }
+
+    @Test func compactionCarriesLoadedSkillsForward() async throws {
+        var entries: [Transcript.Entry] = []
+        entries += turn(0)
+        entries += skillPair("c1", name: "haiku", body: "Old haiku rules")
+        entries += skillPair("c2", name: "haiku", body: "Newer haiku rules")
+        entries += skillPair("c3", name: "deploy", body: "Deploy rules")
+        entries += turn(1)
+        entries += turn(2)
+        entries += skillPair("c4", name: "deploy", body: "Deploy rules again")
+        entries += turn(3)
+        let policy = ContextPolicy(contextTokens: 1_000, keepRecentEntries: 4, charactersPerToken: 1)
+        let compacted = try await Compactor(policy: policy, summarizer: EchoModel(), directory: nil, memory: nil, log: nil).compact(entries)
+
+        // Summary prompt + ack, then the haiku skill re-attached (its latest output), then the kept tail, which already holds the deploy skill.
+        let outputs = compacted.compactMap { entry -> String? in
+            if case .toolOutput(let output) = entry { return TranscriptText.segments(output.segments) }
+            return nil
+        }
+        #expect(outputs.filter { $0.contains("haiku rules") }.count == 1)
+        #expect(outputs.contains { $0.hasPrefix("(re-attached after compaction)\nNewer haiku rules") })
+        #expect(!outputs.contains { $0.contains("Old haiku rules") }, "only the latest output per skill is kept")
+        #expect(outputs.filter { $0.contains("Deploy rules") }.count == 1, "a skill still in the tail is not duplicated")
+        guard case .prompt = compacted[0], case .response = compacted[1], case .toolCalls(let calls) = compacted[2] else {
+            Issue.record("expected summary, ack, then the re-attached call")
+            return
+        }
+        #expect(calls.first?.toolName == "skill")
+        if case .toolOutput(let output) = compacted[3] { #expect(output.id == calls.first?.id, "the re-attached pair shares an id") }
+    }
+
+    @Test func reattachmentRespectsCaps() {
+        let big = String(repeating: "x", count: 50)
+        let older = skillPair("a", name: "one", body: big) + skillPair("b", name: "two", body: big) + skillPair("c", name: "three", body: big)
+        let policy = ContextPolicy(contextTokens: 1_000, reattachCharactersPerOutput: 10, reattachCharactersTotal: 120)
+        let entries = Compactor.reattachments(from: older, stillPresentIn: [], policy: policy)
+        let outputs = entries.compactMap { entry -> String? in
+            if case .toolOutput(let output) = entry { return TranscriptText.segments(output.segments) }
+            return nil
+        }
+        #expect(outputs.count == 2, "the third output no longer fits the total cap, got \(outputs.count)")
+        #expect(outputs.allSatisfy { $0.contains("[truncated when re-attached after compaction]") })
+        #expect(Compactor.reattachments(from: older, stillPresentIn: [], policy: ContextPolicy(contextTokens: 10, reattachedTools: [])).isEmpty)
+    }
+}

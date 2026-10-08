@@ -239,3 +239,29 @@ final class Clock: @unchecked Sendable {
         #expect(await store.all.isEmpty)
     }
 }
+
+@Suite struct SchedulerSkipTests {
+    actor SkippingRunner: JobRunner {
+        var calls = 0
+        func run(_ wake: WakeMessage) async throws -> JobResult {
+            calls += 1
+            if calls == 1 { throw JobRunnerSkip(reason: "session busy") }
+            return JobResult(outcome: .noChange, summary: "events: \(wake.events)")
+        }
+    }
+
+    @Test func aSkipIsNotAFailureAndKeepsEvents() async throws {
+        let store = try JobStore(root: FileManager.default.temporaryDirectory.appending(path: "harness-jobs-\(UUID().uuidString)"))
+        let clock = Clock(Date(timeIntervalSince1970: 1_800_000_000))
+        let runner = SkippingRunner()
+        let scheduler = Scheduler(store: store, runner: runner, delivery: InboxDelivery(store: store), clock: { clock.now })
+        try await scheduler.add(Job.heartbeat(every: 600))
+        let first = await scheduler.enqueue(event: "bg_1 exited")
+        #expect(first?.status == .skipped && first?.skipReason == "session busy")
+        #expect(await store.job("heartbeat")?.state.consecutiveErrors == 0)
+        clock.advance(600)
+        let second = await scheduler.tick()
+        #expect(second.first?.status == .ok)
+        #expect(second.first?.summary == "events: [\"bg_1 exited\"]", "the event survived the skip")
+    }
+}

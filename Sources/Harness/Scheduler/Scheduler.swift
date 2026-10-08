@@ -186,6 +186,13 @@ public actor Scheduler {
             } else {
                 await recordSuccess(job, result: result, now: run.finishedAt ?? now, manual: manual)
             }
+        } catch let skipped as JobRunnerSkip {
+            // Not a failure: put the events back and try again at the next tick.
+            if !events.isEmpty { pendingEvents = events + pendingEvents }
+            run.status = .skipped
+            run.skipReason = skipped.reason
+            run.finishedAt = clock()
+            if !manual { try? await store.update(job.id) { $0.state.nextRun = $0.schedule.nextRun(after: now) } }
         } catch {
             run.status = .error
             run.outcome = .failed

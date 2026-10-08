@@ -21,14 +21,23 @@ public struct ContextPolicy: Sendable {
     public var keepRecentEntries: Int
     /// Characters per token for the size estimate. No tokenizer is available for arbitrary models.
     public var charactersPerToken: Double
+    /// Tools whose most recent output per distinct argument set is re-attached
+    /// after compaction, so instructions loaded through them are not lost.
+    public var reattachedTools: [String]
+    /// Characters kept per re-attached output, and in total.
+    public var reattachCharactersPerOutput: Int
+    public var reattachCharactersTotal: Int
 
-    public init(contextTokens: Int, maskAt: Double = 0.5, keepRecentToolOutputs: Int = 8, compactAt: Double = 0.8, keepRecentEntries: Int = 20, charactersPerToken: Double = 3.5) {
+    public init(contextTokens: Int, maskAt: Double = 0.5, keepRecentToolOutputs: Int = 8, compactAt: Double = 0.8, keepRecentEntries: Int = 20, charactersPerToken: Double = 3.5, reattachedTools: [String] = ["skill"], reattachCharactersPerOutput: Int = 20_000, reattachCharactersTotal: Int = 100_000) {
         self.contextTokens = contextTokens
         self.maskAt = maskAt
         self.keepRecentToolOutputs = keepRecentToolOutputs
         self.compactAt = compactAt
         self.keepRecentEntries = keepRecentEntries
         self.charactersPerToken = charactersPerToken
+        self.reattachedTools = reattachedTools
+        self.reattachCharactersPerOutput = reattachCharactersPerOutput
+        self.reattachCharactersTotal = reattachCharactersTotal
     }
 
     public var maskThresholdTokens: Int { Int(Double(contextTokens) * maskAt) }

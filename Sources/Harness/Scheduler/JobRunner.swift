@@ -62,7 +62,18 @@ public struct WakeMessage: Sendable, Equatable {
 /// Runs one tick. The default runs a fresh agent session; an app can supply
 /// its own to run in its main session or through a different model.
 public protocol JobRunner: Sendable {
+    /// Throw `JobRunnerSkip` to record the tick as skipped rather than failed.
     func run(_ wake: WakeMessage) async throws -> JobResult
+}
+
+/// A runner's way to decline a tick without it counting as a failure, such as
+/// when the session it needs is busy. Events the wake carried are re-queued.
+public struct JobRunnerSkip: Error, Sendable, Equatable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
 }
 
 /// The response tool a scheduled run uses to end in a named outcome, notify
@@ -110,7 +121,11 @@ public actor JobResultSink {
     private var result: JobResult?
     public init() {}
     func store(_ result: JobResult) { self.result = result }
-    func take() -> JobResult? { result }
+    /// Returns and clears the stored result, so a sink can serve many runs.
+    func take() -> JobResult? {
+        defer { result = nil }
+        return result
+    }
 }
 
 /// Runs a job in a fresh session with the configured tools, the response tool,
@@ -145,24 +160,30 @@ public struct AgentJobRunner: JobRunner {
             group.cancelAll()
             return first
         }
-        let input = session.usage.input.totalTokenCount
-        let output = session.usage.output.totalTokenCount
+        return await JobResult.interpret(response, sink: sink, inputTokens: session.usage.input.totalTokenCount, outputTokens: session.usage.output.totalTokenCount)
+    }
+}
+
+extension JobResult {
+    /// Turns a run's reply into a result: the response tool wins, then the
+    /// silence sentinel, then the failure marker, else a progress note that notifies.
+    public static func interpret(_ response: String, sink: JobResultSink, inputTokens: Int, outputTokens: Int) async -> JobResult {
         let text = response.trimmingCharacters(in: .whitespacesAndNewlines)
         if var recorded = await sink.take() {
-            recorded.inputTokens = input
-            recorded.outputTokens = output
+            recorded.inputTokens = inputTokens
+            recorded.outputTokens = outputTokens
             return recorded
         }
         if text == "NO_REPLY" || text.isEmpty {
             var silent = JobResult.silent
-            silent.inputTokens = input
-            silent.outputTokens = output
+            silent.inputTokens = inputTokens
+            silent.outputTokens = outputTokens
             return silent
         }
         if text.hasPrefix("AUTOMATION_FAILED") {
-            return JobResult(outcome: .failed, summary: String(text.dropFirst("AUTOMATION_FAILED".count)).trimmingCharacters(in: .whitespacesAndNewlines), notification: nil, inputTokens: input, outputTokens: output)
+            return JobResult(outcome: .failed, summary: String(text.dropFirst("AUTOMATION_FAILED".count)).trimmingCharacters(in: .whitespacesAndNewlines), notification: nil, inputTokens: inputTokens, outputTokens: outputTokens)
         }
-        return JobResult(outcome: .progress, summary: String(text.prefix(500)), notification: text, inputTokens: input, outputTokens: output)
+        return JobResult(outcome: .progress, summary: String(text.prefix(500)), notification: text, inputTokens: inputTokens, outputTokens: outputTokens)
     }
 }
 

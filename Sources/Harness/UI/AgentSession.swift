@@ -24,17 +24,25 @@ public final class AgentSession: AgentObserver {
     public let prompter: UIPermissionPrompter
     public var activityLimit = 200
 
+    /// Metadata key on prompts that a scheduled job sent, holding the job ID. Views hide these.
+    public static let jobPromptMetadataKey = "harness.job"
+
     private let runner: AgentRunner
+    private let jobSink: JobResultSink
     private var log: SessionLog?
     private var current: Task<Void, Never>?
 
     /// Builds the configuration's prompter into the session: if the configuration
-    /// has none, a `UIPermissionPrompter` is created and used.
+    /// has none, a `UIPermissionPrompter` is created and used. The response tool
+    /// for scheduled runs is added so the heartbeat can run in this session.
     public init(configuration: AgentConfiguration) {
         var configuration = configuration
         let prompter = (configuration.prompter as? UIPermissionPrompter) ?? UIPermissionPrompter()
         configuration.prompter = prompter
         self.prompter = prompter
+        let sink = JobResultSink()
+        self.jobSink = sink
+        configuration.additionalTools.append(JobResponseTool(sink: sink))
         self.runner = AgentRunner(configuration: configuration)
     }
 
@@ -79,9 +87,47 @@ public final class AgentSession: AgentObserver {
         current?.cancel()
     }
 
+    // MARK: Scheduled runs in this session
+
+    /// A runner the scheduler can use so the heartbeat runs here, with the
+    /// conversation as context, rather than in a fresh session.
+    public nonisolated var jobRunner: any JobRunner {
+        AgentSessionJobRunner(agent: self)
+    }
+
+    /// Runs a job's wake message as a turn in this session. Throws `JobRunnerSkip`
+    /// when a turn is already running, so the scheduler records a skip and keeps
+    /// the job's events for the next tick.
+    public func runJob(_ wake: WakeMessage) async throws -> JobResult {
+        if session == nil { try await start() }
+        guard let session else { throw JobRunnerSkip(reason: "session unavailable") }
+        guard !isRunning else { throw JobRunnerSkip(reason: "session busy") }
+        isRunning = true
+        defer { isRunning = false }
+        let inputBefore = session.usage.input.totalTokenCount
+        let outputBefore = session.usage.output.totalTokenCount
+        let response = try await session.respond(
+            to: Prompt(wake.rendered()),
+            metadata: [Self.jobPromptMetadataKey: wake.job.id]
+        )
+        usage = session.usage
+        return await JobResult.interpret(
+            response.content,
+            sink: jobSink,
+            inputTokens: session.usage.input.totalTokenCount - inputBefore,
+            outputTokens: session.usage.output.totalTokenCount - outputBefore
+        )
+    }
+
     /// Closes the log. Call when the session is finished for good.
     public func close() async {
         await log?.close()
+    }
+
+    /// True for a prompt a scheduled job sent, so a view can hide it.
+    public static func isJobPrompt(_ entry: Transcript.Entry) -> Bool {
+        guard case .prompt(let prompt) = entry else { return false }
+        return prompt.metadata[jobPromptMetadataKey] != nil
     }
 
     // MARK: AgentObserver
@@ -97,5 +143,13 @@ public final class AgentSession: AgentObserver {
     private func record(_ event: HarnessEvent) {
         activity.append(event)
         if activity.count > activityLimit { activity.removeFirst(activity.count - activityLimit) }
+    }
+}
+
+struct AgentSessionJobRunner: JobRunner {
+    let agent: AgentSession
+
+    func run(_ wake: WakeMessage) async throws -> JobResult {
+        try await agent.runJob(wake)
     }
 }

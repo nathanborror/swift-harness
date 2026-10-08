@@ -22,6 +22,8 @@ public struct AgentConfiguration: Sendable {
     /// Adds a read-only explorer sub-agent on the same model.
     public var includesExplorer: Bool
     public var sessionID: String?
+    /// Further tools the app supplies, gated like the rest.
+    public var additionalTools: [any Tool]
 
     public static let defaultInstructions = """
         You are a coding agent working in a workspace. Use the tools: read before you change anything, keep diffs scoped, and verify your work by running the project's checks where they exist. When you finish, state what you changed and what you did not do.
@@ -38,7 +40,8 @@ public struct AgentConfiguration: Sendable {
         contextPolicy: ContextPolicy? = nil,
         instructions: String = AgentConfiguration.defaultInstructions,
         includesExplorer: Bool = true,
-        sessionID: String? = nil
+        sessionID: String? = nil,
+        additionalTools: [any Tool] = []
     ) {
         self.model = model
         self.workspace = workspace
@@ -51,6 +54,7 @@ public struct AgentConfiguration: Sendable {
         self.instructions = instructions
         self.includesExplorer = includesExplorer
         self.sessionID = sessionID
+        self.additionalTools = additionalTools
     }
 }
 
@@ -105,6 +109,7 @@ public struct AgentRunner: Sendable {
             )
             tools.append(gate.gate(TaskTool(agents: [explorer], log: log)))
         }
+        tools += configuration.additionalTools
 
         let profile = AgentProfile(
             configuration: configuration,

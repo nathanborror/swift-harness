@@ -124,8 +124,50 @@ struct Compactor: Sendable {
         if let archivePath { text += "\n\nThe full earlier history is archived at \(archivePath)." }
         let summaryPrompt = Transcript.Entry.prompt(.init(segments: [.text(.init(content: text))]))
         let acknowledgement = Transcript.Entry.response(.init(segments: [.text(.init(content: "Understood. Continuing from the summary."))]))
+        let reattached = Self.reattachments(from: older, stillPresentIn: recent, policy: policy)
         await log?.record(.compaction(archivedTo: archivePath, droppedEntries: older.count, keptEntries: recent.count, summaryCharacters: summary.count))
-        return [summaryPrompt, acknowledgement] + recent
+        return [summaryPrompt, acknowledgement] + reattached + recent
+    }
+
+    /// The last output per distinct call of each re-attached tool that would
+    /// otherwise be lost, as a tool call and output pair. Losing a loaded skill
+    /// degrades the agent silently, so it is carried across the compaction.
+    static func reattachments(from older: [Transcript.Entry], stillPresentIn recent: [Transcript.Entry], policy: ContextPolicy) -> [Transcript.Entry] {
+        guard !policy.reattachedTools.isEmpty else { return [] }
+        func calls(in entries: [Transcript.Entry]) -> [(key: String, call: Transcript.ToolCall, output: Transcript.ToolOutput)] {
+            var outputs: [String: Transcript.ToolOutput] = [:]
+            for case .toolOutput(let output) in entries { outputs[output.id] = output }
+            var found: [(String, Transcript.ToolCall, Transcript.ToolOutput)] = []
+            for case .toolCalls(let group) in entries {
+                for call in group where policy.reattachedTools.contains(call.toolName) {
+                    guard let output = outputs[call.id] else { continue }
+                    found.append(("\(call.toolName):\(call.arguments.jsonString)", call, output))
+                }
+            }
+            return found
+        }
+        let kept = Set(calls(in: recent).map(\.key))
+        var latest: [String: (Transcript.ToolCall, Transcript.ToolOutput)] = [:]
+        var order: [String] = []
+        for (key, call, output) in calls(in: older) where !kept.contains(key) {
+            if latest[key] == nil { order.append(key) }
+            latest[key] = (call, output)
+        }
+        var entries: [Transcript.Entry] = []
+        var total = 0
+        for key in order {
+            guard let (call, output) = latest[key] else { continue }
+            var text = TranscriptText.segments(output.segments)
+            if text.count > policy.reattachCharactersPerOutput {
+                text = String(text.prefix(policy.reattachCharactersPerOutput)) + "\n[truncated when re-attached after compaction]"
+            }
+            guard total + text.count <= policy.reattachCharactersTotal else { break }
+            total += text.count
+            let id = "reattached-\(call.id)"
+            entries.append(.toolCalls(Transcript.ToolCalls(id: "reattached-calls-\(call.id)", [Transcript.ToolCall(id: id, toolName: call.toolName, arguments: call.arguments)])))
+            entries.append(.toolOutput(Transcript.ToolOutput(id: id, toolName: output.toolName, segments: [.text(.init(content: "(re-attached after compaction)\n" + text))])))
+        }
+        return entries
     }
 
     /// Keeps the last `keep` entries, extended backward so the tail starts at a prompt

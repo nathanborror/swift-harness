@@ -22,6 +22,9 @@ let package = Package(
         .testTarget(
             name: "HarnessTests",
             dependencies: ["Harness"],
+            resources: [
+                .copy("Fixtures"),
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

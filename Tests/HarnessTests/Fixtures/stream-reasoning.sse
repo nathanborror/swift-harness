@@ -1,0 +1,46 @@
+data: {"type":"response.created","response":{"id":"gen-1791431213-5vajydhXAN3xOanU8ppe","object":"response","created_at":1791431213,"model":"anthropic/claude-sonnet-4.6","status":"in_progress","completed_at":null,"output":[],"error":null,"incomplete_details":null,"tools":[{"type":"function","name":"get_weather","description":"Get current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false},"strict":null}],"tool_choice":"auto","parallel_tool_calls":true,"max_output_tokens":1200,"temperature":1,"top_p":1,"presence_penalty":0,"frequency_penalty":0,"top_logprobs":0,"max_tool_calls":null,"metadata":{},"background":false,"previous_response_id":null,"service_tier":"auto","truncation":"disabled","store":false,"instructions":"Terse. Use get_weather for weather.","text":{"format":{"type":"text"}},"reasoning":{"effort":"medium"},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null,"usage":null},"sequence_number":0}
+
+data: {"type":"response.in_progress","response":{"id":"gen-1791431213-5vajydhXAN3xOanU8ppe","object":"response","created_at":1791431213,"model":"anthropic/claude-sonnet-4.6","status":"in_progress","completed_at":null,"output":[],"error":null,"incomplete_details":null,"tools":[{"type":"function","name":"get_weather","description":"Get current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false},"strict":null}],"tool_choice":"auto","parallel_tool_calls":true,"max_output_tokens":1200,"temperature":1,"top_p":1,"presence_penalty":0,"frequency_penalty":0,"top_logprobs":0,"max_tool_calls":null,"metadata":{},"background":false,"previous_response_id":null,"service_tier":"auto","truncation":"disabled","store":false,"instructions":"Terse. Use get_weather for weather.","text":{"format":{"type":"text"}},"reasoning":{"effort":"medium"},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null,"usage":null},"sequence_number":1}
+
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_tmp_cx1spln1c5i","type":"reasoning","status":"in_progress","summary":[]},"sequence_number":2}
+
+data: {"type":"response.content_part.added","output_index":0,"item_id":"rs_tmp_cx1spln1c5i","content_index":0,"part":{"type":"reasoning_text","text":""},"sequence_number":3}
+
+data: {"type":"response.reasoning_text.delta","output_index":0,"item_id":"rs_tmp_cx1spln1c5i","content_index":0,"delta":"Simple","sequence_number":4}
+
+: 
+
+data: {"type":"response.reasoning_text.delta","output_index":0,"item_id":"rs_tmp_cx1spln1c5i","content_index":0,"delta":" weather request for Oslo.","sequence_number":5}
+
+data: {"type":"response.reasoning_text.done","output_index":0,"item_id":"rs_tmp_cx1spln1c5i","content_index":0,"text":"Simple weather request for Oslo.","sequence_number":6}
+
+data: {"type":"response.content_part.done","output_index":0,"item_id":"rs_tmp_cx1spln1c5i","content_index":0,"part":{"type":"reasoning_text","text":"Simple weather request for Oslo."},"sequence_number":7}
+
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_tmp_cx1spln1c5i","type":"reasoning","status":"completed","content":[{"type":"reasoning_text","text":"Simple weather request for Oslo."}],"summary":[],"signature":"EswCCsgBCBIYAipArYIbDnILqSyJIFFUZWT2sqGbZs1eHPdwNHBC9kB9gY3JATOedMLU9IWs4ncPPNYXx+C9tp5PjbMReNeV9YfApzIRY2xhdWRlLXNvbm5ldC00LTY4AEIIdGhpbmtpbmdaJDRjMGYwNDZmLTI1ZmQtNDVmYi1iZmIzLWEwOGE4ZTI0OWNhN3oedXByb2ZfMDExQ2VlMk5zVEx4VVVxUTlDc1h1elZDmgETChFjbGF1ZGUtc29ubmV0LTQtNqgBr6Sc1gYSDOchIaXULoRQXhQkpxoM7cboF1uQ0k2Xsuq5IjBJbWQ4hhzKyfpgvIL4mTCmP+qLw1OZHg4aX+4U2+oPXXoLZdFMmOtKTlRZ/RsGT8sqMaL2ZeyUmiFL+yP5wgb4Mu2hABMLTyi2Pwu9y63NsE/9YKH2yHHRkJek4snx+E5hQtgYAQ==.eyJlbmRwb2ludF9zbHVnIjoiYW50aHJvcGljL2NsYXVkZS00LjYtc29ubmV0LTIwMjYwMjE3fGNsYXVkZS1vbi1hd3MifQ","format":"anthropic-claude-v1"},"sequence_number":8}
+
+data: {"type":"response.output_item.added","output_index":1,"item":{"id":"msg_tmp_izo7831d0ak","type":"message","status":"in_progress","role":"assistant","content":[]},"sequence_number":9}
+
+data: {"type":"response.content_part.added","output_index":1,"item_id":"msg_tmp_izo7831d0ak","content_index":0,"part":{"type":"output_text","text":"","annotations":[],"logprobs":[]},"sequence_number":10}
+
+data: {"type":"response.output_text.delta","output_index":1,"item_id":"msg_tmp_izo7831d0ak","content_index":0,"delta":"Sure!","logprobs":[],"sequence_number":11}
+
+data: {"type":"response.output_text.done","output_index":1,"item_id":"msg_tmp_izo7831d0ak","content_index":0,"text":"Sure!","logprobs":[],"sequence_number":12}
+
+data: {"type":"response.content_part.done","output_index":1,"item_id":"msg_tmp_izo7831d0ak","content_index":0,"part":{"type":"output_text","text":"Sure!","annotations":[],"logprobs":[]},"sequence_number":13}
+
+data: {"type":"response.output_item.done","output_index":1,"item":{"id":"msg_tmp_izo7831d0ak","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Sure!","annotations":[],"logprobs":[]}]},"sequence_number":14}
+
+data: {"type":"response.output_item.added","output_index":2,"item":{"id":"fc_tmp_nb68fpd4id","type":"function_call","status":"in_progress","call_id":"toolu_01SwzUFjcprkBxcbQMbntHyJ","name":"get_weather","arguments":""},"sequence_number":15}
+
+data: {"type":"response.function_call_arguments.delta","output_index":2,"item_id":"fc_tmp_nb68fpd4id","delta":"{\"city\": \"Oslo","sequence_number":16}
+
+data: {"type":"response.function_call_arguments.delta","output_index":2,"item_id":"fc_tmp_nb68fpd4id","delta":"\"}","sequence_number":17}
+
+data: {"type":"response.function_call_arguments.done","output_index":2,"item_id":"fc_tmp_nb68fpd4id","name":"get_weather","arguments":"{\"city\": \"Oslo\"}","sequence_number":18}
+
+data: {"type":"response.output_item.done","output_index":2,"item":{"id":"fc_tmp_nb68fpd4id","type":"function_call","status":"completed","call_id":"toolu_01SwzUFjcprkBxcbQMbntHyJ","name":"get_weather","arguments":"{\"city\": \"Oslo\"}"},"sequence_number":19}
+
+data: {"type":"response.completed","response":{"id":"gen-1791431213-5vajydhXAN3xOanU8ppe","object":"response","created_at":1791431213,"model":"anthropic/claude-sonnet-4.6","status":"completed","completed_at":1791431215,"output":[{"id":"rs_tmp_cx1spln1c5i","type":"reasoning","status":"completed","content":[{"type":"reasoning_text","text":"Simple weather request for Oslo."}],"summary":[],"signature":"EswCCsgBCBIYAipArYIbDnILqSyJIFFUZWT2sqGbZs1eHPdwNHBC9kB9gY3JATOedMLU9IWs4ncPPNYXx+C9tp5PjbMReNeV9YfApzIRY2xhdWRlLXNvbm5ldC00LTY4AEIIdGhpbmtpbmdaJDRjMGYwNDZmLTI1ZmQtNDVmYi1iZmIzLWEwOGE4ZTI0OWNhN3oedXByb2ZfMDExQ2VlMk5zVEx4VVVxUTlDc1h1elZDmgETChFjbGF1ZGUtc29ubmV0LTQtNqgBr6Sc1gYSDOchIaXULoRQXhQkpxoM7cboF1uQ0k2Xsuq5IjBJbWQ4hhzKyfpgvIL4mTCmP+qLw1OZHg4aX+4U2+oPXXoLZdFMmOtKTlRZ/RsGT8sqMaL2ZeyUmiFL+yP5wgb4Mu2hABMLTyi2Pwu9y63NsE/9YKH2yHHRkJek4snx+E5hQtgYAQ==.eyJlbmRwb2ludF9zbHVnIjoiYW50aHJvcGljL2NsYXVkZS00LjYtc29ubmV0LTIwMjYwMjE3fGNsYXVkZS1vbi1hd3MifQ","format":"anthropic-claude-v1"},{"id":"msg_tmp_izo7831d0ak","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Sure!","annotations":[],"logprobs":[]}]},{"id":"fc_tmp_nb68fpd4id","type":"function_call","status":"completed","call_id":"toolu_01SwzUFjcprkBxcbQMbntHyJ","name":"get_weather","arguments":"{\"city\": \"Oslo\"}"}],"error":null,"incomplete_details":null,"tools":[{"type":"function","name":"get_weather","description":"Get current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false},"strict":null}],"tool_choice":"auto","parallel_tool_calls":true,"max_output_tokens":1200,"temperature":1,"top_p":1,"presence_penalty":0,"frequency_penalty":0,"top_logprobs":0,"max_tool_calls":null,"metadata":{},"background":false,"previous_response_id":null,"service_tier":"default","truncation":"disabled","store":false,"instructions":"Terse. Use get_weather for weather.","text":{"format":{"type":"text"}},"reasoning":{"effort":"medium"},"safety_identifier":null,"prompt_cache_key":null,"prompt_cache_options":null,"usage":{"input_tokens":585,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens":77,"output_tokens_details":{"reasoning_tokens":18},"total_tokens":662,"cost":0.00291,"is_byok":false,"cost_details":{"upstream_inference_cost":0.00291,"upstream_inference_input_cost":0.001755,"upstream_inference_output_cost":0.001155}}},"sequence_number":20}
+
+data: [DONE]
+

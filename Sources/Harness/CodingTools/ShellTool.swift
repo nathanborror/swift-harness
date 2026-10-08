@@ -17,10 +17,12 @@ public struct ShellTool: AnnotatedTool {
         public var workdir: String?
         @Guide(description: "Time limit in seconds. Defaults to 120, at most 600.", .range(1...600))
         public var timeoutSeconds: Int?
+        @Guide(description: "Run in the background and return at once with a process id. For builds, servers, and anything long.")
+        public var background: Bool?
     }
 
     public let name: String
-    public let description = "Runs a command with /bin/sh in the workspace and returns its combined output and exit code. Output is captured in full and bounded afterward, so do not pipe through head or tail. Commands cannot answer interactive prompts. Prefer rg for search."
+    public let description = "Runs a command with /bin/sh in the workspace and returns its combined output and exit code. Output is captured in full and bounded afterward, so do not pipe through head or tail. Commands cannot answer interactive prompts. Prefer rg for search. Set background for long commands and check them with process_status."
     public let annotations = ToolAnnotations(isReadOnly: false, isDestructive: false, isOpenWorld: true)
     let context: CodingToolContext
 
@@ -31,6 +33,13 @@ public struct ShellTool: AnnotatedTool {
 
     public func call(arguments: Arguments) async throws -> String {
         let directory = try arguments.workdir.map { try context.workspace.url(for: $0) } ?? context.workspace.root
+        if arguments.background == true {
+            guard let manager = context.processes else {
+                return "Background commands are not enabled in this session. Run it in the foreground with a longer timeout_seconds."
+            }
+            let record = try await manager.start(command: arguments.command, directory: directory)
+            return "Started background process \(record.id). Output goes to \(record.outputPath). Check it with process_status; you will be woken when it exits."
+        }
         let limit = min(TimeInterval(arguments.timeoutSeconds ?? Int(context.limits.shellTimeout)), context.limits.shellTimeoutMaximum)
         let result = try await ProcessRunner.run(command: arguments.command, directory: directory, timeout: limit)
         var text = result.output.trimmingCharacters(in: .newlines)

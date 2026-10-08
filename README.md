@@ -77,6 +77,14 @@ swift run harness run --workspace path/to/project "Fix the failing test."
 swift run harness run --workspace . --json --approve "Add a changelog entry."
 ```
 
+## In an app
+
+`AgentSession` is the object a SwiftUI app observes. It is a main-actor `@Observable` class that owns the framework session across turns, so views read `session.transcript` and `session.isResponding` from the framework directly, and adds what the framework does not expose: the reply streaming in, recent harness activity, token usage, the last error, and a `cancel()`. It starts from a configuration and can resume from a transcript saved by an earlier session.
+
+`UIPermissionPrompter` turns an ask into state: the gate parks a request on `pending`, the view renders it, and `respond(_:)` resumes the tool call with allow once, allow always, or deny. Asks are served one at a time, and one that nobody answers within the timeout is denied, so a waiting tool call always ends.
+
+On macOS the shell tool can run a command in the background. The command's output streams to a file in the session's outputs folder, `process_status` returns its state and a bounded tail, `process_stop` ends it, and the manager's exit handler lets the app queue an event on the scheduler, which wakes the heartbeat within a rate limit so the agent continues without polling.
+
 ## Evals
 
 An eval task is a folder with a `task.json`: a prompt, files to seed the workspace, optional setup command, graders, a timeout, and a suite name. `EvalRunner` runs each task for a number of trials, each in a fresh workspace with its own session folder, grades the outcome, and writes `report.json` and `report.txt` under the output root alongside every trial's workspace and session, so a failing trial can be read back in full.
@@ -165,6 +173,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. The library also builds for the iOS simulator, with the shell tool and the process runner left out there. Not yet built: wake-on-completion for background commands, which needs background shell support first, and a SwiftUI layer over the event stream. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. The library also builds for the iOS simulator, with the shell tool, background processes, and the process runner left out there. Views are left to the app; the package provides the observable session and prompter they bind to. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

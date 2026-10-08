@@ -8,8 +8,8 @@ import FoundationModels
 public struct CodingTools: Sendable {
     public let context: CodingToolContext
 
-    public init(workspace: Workspace, limits: CodingToolContext.Limits = CodingToolContext.Limits()) {
-        self.context = CodingToolContext(workspace: workspace, limits: limits)
+    public init(workspace: Workspace, limits: CodingToolContext.Limits = CodingToolContext.Limits(), backgroundOutputs: URL? = nil) {
+        self.context = CodingToolContext(workspace: workspace, limits: limits, backgroundOutputs: backgroundOutputs)
     }
 
     public init(context: CodingToolContext) {
@@ -29,6 +29,10 @@ public struct CodingTools: Sendable {
         var tools: [any Tool] = [gate.gate(read), gate.gate(edit), gate.gate(write)]
         #if os(macOS)
         tools.append(gate.gate(shell))
+        if let processes = context.processes {
+            tools.append(gate.gate(ProcessStatusTool(manager: processes)))
+            tools.append(gate.gate(ProcessStopTool(manager: processes)))
+        }
         #endif
         return tools
     }

@@ -15,6 +15,12 @@ public actor Scheduler {
         /// Agent-created jobs expire after this long unless renewed.
         public var agentJobLifetime: TimeInterval = 7 * 24 * 3600
         public var maximumCatchUpRuns = 5
+        /// The job that event wakes run. The heartbeat by default.
+        public var wakeJobID = "heartbeat"
+        /// Minimum spacing between event wakes, and a flood guard on top of it.
+        public var wakeInterval: TimeInterval = 30
+        public var wakeFloodLimit = 5
+        public var wakeFloodWindow: TimeInterval = 60
 
         public init() {}
     }
@@ -27,6 +33,9 @@ public actor Scheduler {
     private var timer: Task<Void, Never>?
     public private(set) var isPaused = false
     private let clock: @Sendable () -> Date
+    private var pendingEvents: [String] = []
+    private var lastWake: Date?
+    private var recentWakes: [Date] = []
 
     public init(store: JobStore, runner: any JobRunner, delivery: any JobDelivery, policy: Policy = Policy(), clock: @escaping @Sendable () -> Date = { Date() }) {
         self.store = store
@@ -69,6 +78,23 @@ public actor Scheduler {
         }
         if job.state.nextRun == nil { job.state.nextRun = job.schedule.nextRun(after: clock()) }
         try await store.upsert(job)
+    }
+
+    /// Queues a system event for the next run of the wake job. With `wake`, the
+    /// job runs now, subject to the wake rate limit; a limited wake is dropped
+    /// and the event waits for the next tick. Returns the run when one happened.
+    @discardableResult
+    public func enqueue(event: String, wake: Bool = true) async -> JobRun? {
+        pendingEvents.append(event)
+        guard wake else { return nil }
+        let now = clock()
+        recentWakes = recentWakes.filter { now.timeIntervalSince($0) < policy.wakeFloodWindow }
+        if let lastWake, now.timeIntervalSince(lastWake) < policy.wakeInterval { return nil }
+        if recentWakes.count >= policy.wakeFloodLimit { return nil }
+        guard let job = await store.job(policy.wakeJobID), job.enabled, !running.contains(job.id) else { return nil }
+        lastWake = now
+        recentWakes.append(now)
+        return await execute(job, scheduledAt: nil, manual: true, now: now)
     }
 
     /// Runs a job now regardless of its schedule, as a visible test or on request.
@@ -136,11 +162,13 @@ public actor Scheduler {
         if isPaused, !manual { return await skip("scheduler paused") }
         if let hours = job.activeHours, !hours.contains(now), !manual { return await skip("outside active hours") }
         if running.contains(job.id) { return await skip("previous run still in progress", advance: false) }
-        if job.skipsWhenScratchEmpty, job.scratchIsEmpty { return await skip("checklist empty") }
+        let events = job.id == policy.wakeJobID ? pendingEvents : []
+        if job.skipsWhenScratchEmpty, job.scratchIsEmpty, events.isEmpty { return await skip("checklist empty") }
 
         running.insert(job.id)
         defer { running.remove(job.id) }
-        let wake = WakeMessage(job: job, scheduledAt: scheduledAt, now: now)
+        if !events.isEmpty { pendingEvents.removeAll() }
+        let wake = WakeMessage(job: job, scheduledAt: scheduledAt, now: now, events: events)
         do {
             let result = try await runner.run(wake)
             run.status = result.outcome == .failed ? .error : .ok

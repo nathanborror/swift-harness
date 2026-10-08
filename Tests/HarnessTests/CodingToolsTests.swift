@@ -108,26 +108,26 @@ import Testing
     #if os(macOS)
     @Test func shellRunsInWorkspaceAndReportsExitCodes() async throws {
         let (tools, root) = try makeTools()
-        let pwd = try await tools.shell.call(arguments: .init(command: "pwd; printf 'err\\n' 1>&2; echo done", workdir: nil, timeoutSeconds: nil))
+        let pwd = try await tools.shell.call(arguments: .init(command: "pwd; printf 'err\\n' 1>&2; echo done", workdir: nil, timeoutSeconds: nil, background: nil))
         #expect(pwd.contains(root.lastPathComponent))
         #expect(pwd.contains("err"))
         #expect(pwd.hasSuffix("done"))
-        let failing = try await tools.shell.call(arguments: .init(command: "echo bad; exit 3", workdir: nil, timeoutSeconds: nil))
+        let failing = try await tools.shell.call(arguments: .init(command: "echo bad; exit 3", workdir: nil, timeoutSeconds: nil, background: nil))
         #expect(failing == "bad\n\n[exit code 3]")
-        let empty = try await tools.shell.call(arguments: .init(command: "true", workdir: nil, timeoutSeconds: nil))
+        let empty = try await tools.shell.call(arguments: .init(command: "true", workdir: nil, timeoutSeconds: nil, background: nil))
         #expect(empty == "(no output)")
         try FileManager.default.createDirectory(at: root.appending(path: "nested"), withIntermediateDirectories: true)
-        let nested = try await tools.shell.call(arguments: .init(command: "basename \"$PWD\"", workdir: "nested", timeoutSeconds: nil))
+        let nested = try await tools.shell.call(arguments: .init(command: "basename \"$PWD\"", workdir: "nested", timeoutSeconds: nil, background: nil))
         #expect(nested == "nested")
         await #expect(throws: WorkspaceError.self) {
-            _ = try await tools.shell.call(arguments: .init(command: "pwd", workdir: "..", timeoutSeconds: nil))
+            _ = try await tools.shell.call(arguments: .init(command: "pwd", workdir: "..", timeoutSeconds: nil, background: nil))
         }
     }
 
     @Test func shellKillsAtTimeout() async throws {
         let (tools, _) = try makeTools()
         let started = Date()
-        let output = try await tools.shell.call(arguments: .init(command: "echo start; sleep 30; echo never", workdir: nil, timeoutSeconds: 1))
+        let output = try await tools.shell.call(arguments: .init(command: "echo start; sleep 30; echo never", workdir: nil, timeoutSeconds: 1, background: nil))
         #expect(Date().timeIntervalSince(started) < 10)
         #expect(output.hasPrefix("start"))
         #expect(output.contains("did not complete within 1 seconds"))

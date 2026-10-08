@@ -26,12 +26,19 @@ public final class CodingToolContext: Sendable {
     public let limits: Limits
     let reads: FileReadRegistry
     let edits: EditSerializer
+    #if os(macOS)
+    /// Long-running commands, when the shell tool may run in the background.
+    public let processes: BackgroundProcessManager?
+    #endif
 
-    public init(workspace: Workspace, limits: Limits = Limits()) {
+    public init(workspace: Workspace, limits: Limits = Limits(), backgroundOutputs: URL? = nil) {
         self.workspace = workspace
         self.limits = limits
         self.reads = FileReadRegistry()
         self.edits = EditSerializer()
+        #if os(macOS)
+        self.processes = backgroundOutputs.map { BackgroundProcessManager(outputsDirectory: $0) }
+        #endif
     }
 }
 

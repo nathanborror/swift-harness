@@ -72,7 +72,16 @@ public struct AgentRunner: Sendable {
         self.configuration = configuration
     }
 
-    public func run(prompt: String, observer: (any AgentObserver)? = nil) async throws -> AgentRunResult {
+    /// A session with everything wired, ready for one or many prompts.
+    public struct Assembly: Sendable {
+        public let session: LanguageModelSession
+        public let directory: SessionDirectory
+        public let log: SessionLog
+        public let gate: ToolGate
+    }
+
+    /// Builds the session. Pass a saved history to resume an earlier session.
+    public func makeSession(history: Transcript? = nil, observer: (any AgentObserver)? = nil) async throws -> Assembly {
         let configuration = self.configuration
         let directory = try SessionDirectory(root: configuration.sessionRoot, sessionID: configuration.sessionID ?? SessionDirectory.makeSessionID())
         let log = try directory.makeLog()
@@ -109,13 +118,17 @@ public struct AgentRunner: Sendable {
         let modelID = (configuration.model as? OpenRouterLanguageModel)?.modelID
         await log.record(.sessionStarted(sessionID: directory.sessionID, modelID: modelID))
         await observer?.event(.sessionStarted(sessionID: directory.sessionID, modelID: modelID))
+        let session = LanguageModelSession(profile: profile, history: history.map { Array($0.history) } ?? [])
+        return Assembly(session: session, directory: directory, log: log, gate: gate)
+    }
 
-        let session = LanguageModelSession(profile: profile)
+    public func run(prompt: String, observer: (any AgentObserver)? = nil) async throws -> AgentRunResult {
+        let assembly = try await makeSession(observer: observer)
         let started = Date()
         var printed = ""
         var final = ""
         do {
-            for try await snapshot in session.streamResponse(to: prompt) {
+            for try await snapshot in assembly.session.streamResponse(to: prompt) {
                 let text = snapshot.content
                 if text.hasPrefix(printed) {
                     await observer?.text(String(text.dropFirst(printed.count)))
@@ -126,16 +139,16 @@ public struct AgentRunner: Sendable {
                 final = text
             }
         } catch {
-            await log.record(.note("Run failed: \(error.localizedDescription)"))
-            await log.close()
+            await assembly.log.record(.note("Run failed: \(error.localizedDescription)"))
+            await assembly.log.close()
             throw error
         }
-        await log.close()
-        let toolCalls = session.transcript.flatMap { entry -> [String] in
+        await assembly.log.close()
+        let toolCalls = assembly.session.transcript.flatMap { entry -> [String] in
             if case .toolCalls(let calls) = entry { return calls.map(\.toolName) }
             return []
         }
-        return AgentRunResult(response: final, directory: directory, usage: session.usage, toolCalls: toolCalls, duration: Date().timeIntervalSince(started), transcript: session.transcript)
+        return AgentRunResult(response: final, directory: assembly.directory, usage: assembly.session.usage, toolCalls: toolCalls, duration: Date().timeIntervalSince(started), transcript: assembly.session.transcript)
     }
 }
 

@@ -32,6 +32,15 @@ public struct WakeMessage: Sendable, Equatable {
     public let job: Job
     public let scheduledAt: Date?
     public let now: Date
+    /// System events queued since the job last ran, such as a background process exiting.
+    public let events: [String]
+
+    public init(job: Job, scheduledAt: Date?, now: Date, events: [String] = []) {
+        self.job = job
+        self.scheduledAt = scheduledAt
+        self.now = now
+        self.events = events
+    }
 
     public func rendered() -> String {
         let formatter = DateFormatter()
@@ -43,6 +52,7 @@ public struct WakeMessage: Sendable, Equatable {
             "Current time: \(formatter.string(from: now)).",
         ]
         if let scheduledAt { lines.append("Scheduled time: \(formatter.string(from: scheduledAt)).") }
+        if !events.isEmpty { lines.append("Events since the last run:\n" + events.map { "- \($0)" }.joined(separator: "\n")) }
         if !job.state.scratch.isEmpty { lines.append("Checklist:\n\(job.state.scratch)") }
         lines.append("Task:\n\(job.prompt)")
         return lines.joined(separator: "\n\n")

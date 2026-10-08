@@ -12,3 +12,4 @@ xcuserdata/
 DerivedData/
 .swiftpm/
 
+.build-ios/

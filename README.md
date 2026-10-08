@@ -38,6 +38,8 @@ Results pass through `ToolResultShaper` before they reach the model. Output over
 
 `MemoryDirectory` is the agent's memory on disk, as plain Markdown: `MEMORY.md` holds the index and curated facts, `USER.md` holds preferences as dated directives, `notes/` holds one append-only file per day, and `topics/` holds one subject per file. `MemoryInstructions` renders the index, the user file, and the last two days of notes into the instructions on every request, each under a hard cap. When a file is over its cap the rendering is cut and says so, and the file on disk is left alone; shortening it is the model's job. Recent notes are framed as untrusted background from earlier sessions.
 
+`MemoryConsolidation` promotes recent notes into the index on a schedule. Deterministic code picks the candidates, which are note lines from the last few days that the index does not already contain. A `ConsolidationPlanner` returns one decision per candidate, add, merge, supersede, or drop, and nothing else; the default planner asks a model through guided generation. The harness writes the entries itself with a date and a source, rejects a rewrite that removes more than a quarter of the existing entries or grows past the cap and falls back to appending, keeps the previous index under `archive/` as an undo, and appends a line to `consolidation.md` for a person to review. `Job.memoryConsolidation()` is the nightly job, paired with `MemoryConsolidationRunner` through a `CompositeJobRunner`.
+
 `MemoryTools` gives the model `memory_read`, `memory_edit`, and `memory_write`, which are the coding tools rooted at the memory folder with the same stale-read rules, plus `memory_note` for appending to today's note and `memory_search` for keyword search that returns a path and line with every hit. The protocol text in the instructions tells the model what to save, what to skip, and to write before its context is lost.
 
 ## Skills
@@ -163,6 +165,6 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. Not yet built: background consolidation of notes into the memory index, which is a natural first scheduled job, and wake-on-completion for background commands, which needs background shell support first. The `Research/` guides describe each of those.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. The library also builds for the iOS simulator, with the shell tool and the process runner left out there. Not yet built: wake-on-completion for background commands, which needs background shell support first, and a SwiftUI layer over the event stream. The `Research/` guides describe each of those.
 
 **Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.

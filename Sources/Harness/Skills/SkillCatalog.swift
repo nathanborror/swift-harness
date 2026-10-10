@@ -57,7 +57,7 @@ public struct SkillCatalog: Sendable, Equatable {
     public static func conventionalRoots(workspace: Workspace?, appSkills: URL? = nil) -> [URL] {
         var roots: [URL] = []
         if let appSkills { roots.append(appSkills) }
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = URL.homeDirectory
         roots.append(home.appending(path: ".agents/skills"))
         if let workspace { roots.append(workspace.root.appending(path: ".agents/skills")) }
         return roots

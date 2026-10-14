@@ -174,6 +174,8 @@ struct AgentProfile: LanguageModelSession.DynamicProfile, Sendable {
             .model(configuration.model)
             .logging(to: log)
             .persistingTranscript(in: directory, log: log)
+            .onPrompt { prompt in await observer?.event(.prompt(Transcript(entries: [.prompt(prompt)]))) }
+            .onResponse { response in await observer?.event(.response(Transcript(entries: [.response(response)]))) }
             .onToolCall { call in await observer?.event(.toolCall(Transcript(entries: [.toolCalls(Transcript.ToolCalls([call]))]))) }
             .onToolOutput { _, output in await observer?.event(.toolOutput(Transcript(entries: [.toolOutput(output)]))) }
             .onReasoning { reasoning in await observer?.event(.reasoning(Transcript(entries: [.reasoning(reasoning)]))) }

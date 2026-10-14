@@ -23,6 +23,9 @@ public final class AgentSession: AgentObserver {
     public private(set) var isRunning = false
     public let prompter: UIPermissionPrompter
     public var activityLimit = 200
+    /// Called on the main actor for every event, after it is recorded on
+    /// `activity`, so a wrapper can mirror the session without polling it.
+    public var eventHandler: (@MainActor (HarnessEvent) -> Void)?
 
     /// Metadata key on prompts that a scheduled job sent, holding the job ID. Views hide these.
     public static let jobPromptMetadataKey = "harness.job"
@@ -143,6 +146,7 @@ public final class AgentSession: AgentObserver {
     private func record(_ event: HarnessEvent) {
         activity.append(event)
         if activity.count > activityLimit { activity.removeFirst(activity.count - activityLimit) }
+        eventHandler?(event)
     }
 }
 

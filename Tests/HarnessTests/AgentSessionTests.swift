@@ -44,6 +44,17 @@ import Testing
         return AgentConfiguration(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
     }
 
+    private static func kind(of event: HarnessEvent) -> String {
+        switch event {
+        case .sessionStarted: "started"
+        case .prompt: "prompt"
+        case .response: "response"
+        case .toolCall: "toolCall"
+        case .toolOutput: "toolOutput"
+        default: "other"
+        }
+    }
+
     @Test @MainActor func runsTurnsAndObservesActivity() async throws {
         let agent = AgentSession(configuration: try makeConfiguration())
         await agent.send("hello")
@@ -54,15 +65,12 @@ import Testing
         #expect(agent.streamingText.hasPrefix("tool said: Wrote a.txt"))
         let session = try #require(agent.session)
         #expect(session.transcript.history.count == 6, "prompt, response, prompt, toolCalls, toolOutput, response")
-        let kinds = agent.activity.map { event -> String in
-            switch event {
-            case .sessionStarted: "started"
-            case .toolCall: "toolCall"
-            case .toolOutput: "toolOutput"
-            default: "other"
-            }
-        }
-        #expect(kinds == ["started", "toolCall", "toolOutput"])
+        var handled: [String] = []
+        agent.eventHandler = { event in handled.append(Self.kind(of: event)) }
+        let kinds = agent.activity.map(Self.kind(of:))
+        #expect(kinds == ["started", "prompt", "response", "prompt", "toolCall", "toolOutput", "response"])
+        await agent.send("again")
+        #expect(handled == ["prompt", "response"], "the handler sees every event as it is recorded")
         await agent.close()
     }
 

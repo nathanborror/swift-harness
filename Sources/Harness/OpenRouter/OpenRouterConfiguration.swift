@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Where an OpenRouter executor sends requests and how it authenticates.
 ///
@@ -13,6 +14,10 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
         case environment(variable: String = "OPENROUTER_API_KEY")
         /// Use a literal key. Fine for development, never for a shipped app.
         case apiKey(String)
+        /// Read a generic-password Keychain item at request time, so a key
+        /// rotated in the app's settings takes effect on the next call. A
+        /// missing item fails the request with `missingCredential`.
+        case keychain(service: String, account: String)
         /// Send no bearer token. Use with a proxy at `baseURL` that attaches the real key.
         case none
     }
@@ -73,8 +78,27 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
         case .apiKey(let key):
             guard !key.isEmpty else { throw OpenRouterError.missingCredential(variable: nil) }
             return key
+        case .keychain(let service, let account):
+            guard let key = Self.keychainItem(service: service, account: account), !key.isEmpty else {
+                throw OpenRouterError.missingCredential(variable: nil)
+            }
+            return key
         case .none:
             return nil
         }
+    }
+
+    /// The UTF-8 value of a generic-password item, or nil when there is none.
+    static func keychainItem(service: String, account: String) -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

@@ -197,7 +197,7 @@ Built and verified: the OpenRouter executor, the session log and persistence, th
 
 Before first app use:
 
-- [ ] Add a Keychain credential and a token provider to `OpenRouterConfiguration.Credential`; an iOS app cannot read an environment variable.
+- [x] Add a Keychain credential to `OpenRouterConfiguration.Credential` (`.keychain(service:account:)`); an iOS app cannot read an environment variable. A token provider is still open.
 - [ ] Run the harness inside a sandboxed app and confirm that the scoped workspace bookmark and `/bin/sh` behave as the App Sandbox docs say.
 - [x] Ship a default shell rule set that denies known-dangerous patterns such as recursive deletes, pushes, and network fetches.
 - [x] Retry transient OpenRouter failures once, and map a URLSession timeout to `LanguageModelError.timeout`.

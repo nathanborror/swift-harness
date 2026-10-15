@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import CoreGraphics
 import Testing
 @testable import Harness
 
@@ -70,6 +71,17 @@ struct WeatherTool: Tool {
         #expect(tools[0]["parameters"]?["required"] == ["city"])
         #expect(tools[0]["parameters"]?["properties"]?["units"]?["type"]?.stringValue == "string")
         #expect(tools[0]["parameters"]?["x-order"] == nil, "Anthropic rejects x-order in schemas")
+    }
+
+    @Test func imagesGoAsJPEGUnlessTheyHaveAlpha() throws {
+        func image(alpha: CGImageAlphaInfo) throws -> CGImage {
+            let context = try #require(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: alpha.rawValue))
+            return try #require(context.makeImage())
+        }
+        let opaque = try ResponsesRequestBuilder.imageDataURL(Transcript.ImageAttachment(try image(alpha: .noneSkipLast)))
+        #expect(opaque.hasPrefix("data:image/jpeg;base64,"))
+        let translucent = try ResponsesRequestBuilder.imageDataURL(Transcript.ImageAttachment(try image(alpha: .premultipliedLast)))
+        #expect(translucent.hasPrefix("data:image/png;base64,"))
     }
 
     @Test func stripsVendorKeysRecursively() {

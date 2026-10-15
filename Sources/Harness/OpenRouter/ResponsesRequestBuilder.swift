@@ -203,15 +203,26 @@ struct ResponsesRequestBuilder {
             let type = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "image/png"
             return "data:\(type);base64,\(data.base64EncodedString())"
         }
+        // JPEG for an opaque image, which is every photo: a fraction of the
+        // PNG, and the whole transcript's images go up again on every turn.
+        let type: UTType = hasAlpha(image.cgImage) ? .png : .jpeg
+        let options: [CFString: Any] = type == .jpeg ? [kCGImageDestinationLossyCompressionQuality: 0.85] : [:]
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+        guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else {
             throw OpenRouterError.malformedEvent("Could not create an image encoder.")
         }
-        CGImageDestinationAddImage(destination, image.cgImage, nil)
+        CGImageDestinationAddImage(destination, image.cgImage, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
             throw OpenRouterError.malformedEvent("Could not encode an image attachment.")
         }
-        return "data:image/png;base64,\((data as Data).base64EncodedString())"
+        return "data:\(type.preferredMIMEType ?? "image/png");base64,\((data as Data).base64EncodedString())"
+    }
+
+    static func hasAlpha(_ image: CGImage) -> Bool {
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: false
+        default: true
+        }
     }
 
     // MARK: Helpers

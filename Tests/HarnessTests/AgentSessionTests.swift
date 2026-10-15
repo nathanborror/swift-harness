@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import CoreGraphics
 import Testing
 @testable import Harness
 
@@ -72,6 +73,31 @@ import Testing
         await agent.send("again")
         #expect(handled == ["prompt", "response"], "the handler sees every event as it is recorded")
         await agent.close()
+    }
+
+    @Test @MainActor func aBuiltPromptKeepsItsAttachmentAndLabel() async throws {
+        let agent = AgentSession(configuration: try makeConfiguration())
+        let context = try #require(CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = try #require(context.makeImage())
+        var recorded: [HarnessEvent] = []
+        agent.eventHandler = { recorded.append($0) }
+        await agent.send(Prompt {
+            "what is this"
+            Attachment(image).label("photo.png")
+        })
+        #expect(agent.streamingText == "echo: what is this", "\(String(describing: agent.lastError))")
+        let session = try #require(agent.session)
+        guard case .prompt(let prompt)? = session.transcript.history.first else { Issue.record("no prompt entry"); return }
+        let attachments = prompt.segments.compactMap { segment -> Transcript.AttachmentSegment? in
+            if case .attachment(let attachment) = segment { return attachment }
+            return nil
+        }
+        #expect(attachments.count == 1)
+        #expect(attachments.first?.label == "photo.png")
+        if case .image(let stored)? = attachments.first?.content { #expect(stored.cgImage.width == 8) }
+        guard case .prompt(let event)? = recorded.first(where: { if case .prompt = $0 { true } else { false } }),
+              case .prompt(let observed)? = event.first else { Issue.record("no prompt event"); return }
+        #expect(observed.segments.count == 2, "the observer sees the attachment too")
     }
 
     @Test @MainActor func resumesFromASavedTranscript() async throws {

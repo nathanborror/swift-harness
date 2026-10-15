@@ -7,7 +7,7 @@ struct EchoModel: LanguageModel {
     typealias Executor = EchoExecutor
     struct Configuration: Hashable, Sendable { var id = "echo" }
 
-    var capabilities: LanguageModelCapabilities { LanguageModelCapabilities([.toolCalling]) }
+    var capabilities: LanguageModelCapabilities { LanguageModelCapabilities([.toolCalling, .vision]) }
     var executorConfiguration: Configuration { Configuration() }
 }
 

@@ -60,6 +60,12 @@ public final class AgentSession: AgentObserver {
 
     /// Sends a prompt and streams the reply. Returns when the turn ends.
     public func send(_ prompt: String) async {
+        await send(Prompt(prompt))
+    }
+
+    /// Sends a built prompt, which may carry attachments beside its text,
+    /// and streams the reply. Returns when the turn ends.
+    public func send(_ prompt: Prompt) async {
         if session == nil {
             do { try await start() } catch { lastError = error; return }
         }

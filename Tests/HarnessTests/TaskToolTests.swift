@@ -40,7 +40,7 @@ import Testing
             _ = try await tool.call(arguments: .init(agent: "worker", prompt: #"call echo {"text":"x"}"#, description: nil))
         }
         let gated = ToolGate(policy: .allowAll).gate(tool)
-        let shaped = try await gated.call(arguments: .init(agent: "worker", prompt: #"call echo {"text":"x"}"#, description: nil))
+        let shaped = try await gated.call(arguments: TaskTool.Arguments(agent: "worker", prompt: #"call echo {"text":"x"}"#, description: nil).generatedContent)
         #expect(shaped.hasPrefix("Error: task failed: The sub-agent reached its limit of 0 tool calls"))
     }
 

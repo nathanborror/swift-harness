@@ -22,6 +22,12 @@ struct ResponsesRequestBuilder {
 
         var instructions: [String] = []
         var input: [JSONValue] = []
+        // A turn that failed or was cancelled mid-tool leaves a call with
+        // no output; the API rejects the history unless every call has one.
+        let answered = Set(request.transcript.compactMap { entry -> String? in
+            if case .toolOutput(let output) = entry { return output.id }
+            return nil
+        })
         for entry in request.transcript {
             switch entry {
             case .instructions(let value):
@@ -34,7 +40,10 @@ struct ResponsesRequestBuilder {
             case .reasoning(let reasoning):
                 input.append(Self.reasoningItem(reasoning))
             case .toolCalls(let calls):
-                for call in calls { input.append(Self.functionCall(call)) }
+                for call in calls {
+                    input.append(Self.functionCall(call))
+                    if !answered.contains(call.id) { input.append(Self.interruptedCallOutput(call)) }
+                }
             case .toolOutput(let output):
                 input.append(try Self.functionCallOutput(output))
             @unknown default:
@@ -159,6 +168,15 @@ struct ResponsesRequestBuilder {
         }
         let value: JSONValue = hasAttachment ? .array(try inputContent(output.segments)) : .string(text(from: output.segments))
         return .object(["type": "function_call_output", "call_id": .string(output.id), "output": value])
+    }
+
+    /// Stands in for the output of a call the turn never finished.
+    static func interruptedCallOutput(_ call: Transcript.ToolCall) -> JSONValue {
+        .object([
+            "type": "function_call_output",
+            "call_id": .string(call.id),
+            "output": .string("No result: the turn was interrupted before \(call.toolName) finished."),
+        ])
     }
 
     // MARK: Segments

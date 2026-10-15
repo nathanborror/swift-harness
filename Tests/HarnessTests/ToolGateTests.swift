@@ -44,6 +44,20 @@ actor ScriptedPrompter: PermissionPrompter {
         try SessionLog(url: FileManager.default.temporaryDirectory.appending(path: "harness-gate-\(UUID().uuidString)/events.jsonl"))
     }
 
+    @Test func argumentsThatMissTheSchemaComeBackAsAnErrorResult() async throws {
+        let log = try makeLog()
+        let gate = ToolGate(policy: .default, log: log)
+        let tool = gate.gate(EchoTool())
+        let result = try await tool.call(arguments: try GeneratedContent(json: #"{"path":"notes","limit":50}"#))
+        #expect(result.hasPrefix("Error: echo was called with arguments that do not match its schema"))
+        #expect(result.contains(#""path""#), "the model sees what it sent")
+        #expect(result.contains("call it again"))
+        let ok = try await tool.call(arguments: try GeneratedContent(json: #"{"text":"hi"}"#))
+        #expect(ok == "hi")
+        let events = try String(contentsOf: log.url, encoding: .utf8)
+        #expect(events.contains(#""failed":true"#) || events.contains(#""failed" : true"#), "the schema miss is logged as a failed result")
+    }
+
     @Test func allowedToolRunsAndIsShaped() async throws {
         let log = try makeLog()
         let gate = ToolGate(policy: .default, shaper: ToolResultShaper(maximumCharacters: 10), log: log)

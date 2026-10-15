@@ -116,6 +116,18 @@ import Testing
         #expect(second.streamingText == "echo: again")
     }
 
+    @Test @MainActor func aFailedTurnKeepsItsPromptAndTheNextTurnStillWorks() async throws {
+        let agent = AgentSession(configuration: try makeConfiguration())
+        await agent.send("explode")
+        #expect(agent.lastError != nil)
+        let session = try #require(agent.session)
+        #expect(session.transcript.history.count == 1, "the prompt stays; the turn is not reverted")
+        await agent.send("hello")
+        #expect(agent.lastError == nil)
+        #expect(agent.streamingText == "echo: hello")
+        #expect(session.transcript.history.count == 3)
+    }
+
     @Test @MainActor func cancelStopsATurn() async throws {
         let agent = AgentSession(configuration: try makeConfiguration())
         try await agent.start()

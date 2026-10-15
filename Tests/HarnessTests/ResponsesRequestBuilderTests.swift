@@ -73,6 +73,26 @@ struct WeatherTool: Tool {
         #expect(tools[0]["parameters"]?["x-order"] == nil, "Anthropic rejects x-order in schemas")
     }
 
+    @Test func aToolCallWithoutAnOutputGetsAPlaceholderOutput() throws {
+        let arguments = try GeneratedContent(json: #"{"city":"Oslo"}"#)
+        let transcript = Transcript(entries: [
+            .prompt(.init(id: "p", segments: [.text(.init(content: "Weather?"))])),
+            .toolCalls(.init(id: "tc", [
+                Transcript.ToolCall(id: "call_1", toolName: "get_weather", arguments: arguments),
+                Transcript.ToolCall(id: "call_2", toolName: "get_weather", arguments: arguments),
+            ])),
+            .toolOutput(.init(id: "call_2", toolName: "get_weather", segments: [.text(.init(content: "Oslo: 4C"))])),
+            .prompt(.init(id: "p2", segments: [.text(.init(content: "And now?"))])),
+        ])
+        let body = try ResponsesRequestBuilder(model: OpenRouterLanguageModel(modelID: "test/model")).body(for: makeRequest(transcript: transcript))
+        let input = try #require(body["input"]?.arrayValue)
+        #expect(input.map { $0["type"]?.stringValue ?? $0["role"]?.stringValue } == ["user", "function_call", "function_call_output", "function_call", "function_call_output", "user"])
+        #expect(input[2]["call_id"]?.stringValue == "call_1")
+        #expect(input[2]["output"]?.stringValue?.contains("interrupted") == true)
+        #expect(input[4]["call_id"]?.stringValue == "call_2")
+        #expect(input[4]["output"]?.stringValue == "Oslo: 4C")
+    }
+
     @Test func imagesGoAsJPEGUnlessTheyHaveAlpha() throws {
         func image(alpha: CGImageAlphaInfo) throws -> CGImage {
             let context = try #require(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: alpha.rawValue))

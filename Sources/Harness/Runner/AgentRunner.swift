@@ -172,6 +172,10 @@ struct AgentProfile: LanguageModelSession.DynamicProfile, Sendable {
     var body: some LanguageModelSession.DynamicProfile {
         base
             .model(configuration.model)
+            // A turn that throws keeps its prompt and whatever it produced,
+            // instead of being reverted as if it never happened; the
+            // request builder closes any tool call left without an output.
+            .transcriptErrorHandlingPolicy(.preserveTranscript)
             .logging(to: log)
             .persistingTranscript(in: directory, log: log)
             .onPrompt { prompt in await observer?.event(.prompt(Transcript(entries: [.prompt(prompt)]))) }

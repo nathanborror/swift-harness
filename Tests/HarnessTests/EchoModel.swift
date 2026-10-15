@@ -29,6 +29,8 @@ struct EchoExecutor: LanguageModelExecutor {
             default: break
             }
         }
+        // "explode" fails the request the way a provider outage would.
+        if lastToolOutput == nil, lastPrompt == "explode" { throw EchoFailure() }
         // "call <tool> <json>" asks for one tool call, then the next turn echoes the tool's output.
         if lastToolOutput == nil, lastPrompt.hasPrefix("call "), request.enabledToolDefinitions.contains(where: { lastPrompt.hasPrefix("call \($0.name) ") }) {
             let rest = lastPrompt.dropFirst(5)
@@ -43,4 +45,8 @@ struct EchoExecutor: LanguageModelExecutor {
         await channel.send(.response(entryID: entryID, action: .appendText(text, tokenCount: 0)))
         await channel.send(.response(entryID: entryID, action: .updateUsage(input: .init(totalTokenCount: 10, cachedTokenCount: 0), output: .init(totalTokenCount: 5, reasoningTokenCount: 0))))
     }
+}
+
+struct EchoFailure: Error, LocalizedError {
+    var errorDescription: String? { "provider exploded" }
 }

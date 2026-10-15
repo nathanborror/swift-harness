@@ -133,8 +133,14 @@ public actor ToolGate {
 
 /// A tool whose calls go through a `ToolGate`. Same name, description, and
 /// schema as the wrapped tool, so the model sees no difference.
+///
+/// Takes raw generated content and parses the wrapped tool's arguments
+/// itself: a call that does not match the schema (a model naming one tool
+/// with another's arguments) then comes back to the model as an error it
+/// can correct, where the framework would have failed the whole turn
+/// before the tool was ever reached.
 public struct Gated<Base: Tool>: Tool where Base.Arguments: ConvertibleToGeneratedContent, Base.Output: ConvertibleToGeneratedContent {
-    public typealias Arguments = Base.Arguments
+    public typealias Arguments = GeneratedContent
     public typealias Output = String
 
     public let base: Base
@@ -145,10 +151,17 @@ public struct Gated<Base: Tool>: Tool where Base.Arguments: ConvertibleToGenerat
     public var parameters: GenerationSchema { base.parameters }
     public var includesSchemaInInstructions: Bool { base.includesSchemaInInstructions }
 
-    @concurrent public func call(arguments: Base.Arguments) async throws -> String {
+    @concurrent public func call(arguments raw: GeneratedContent) async throws -> String {
+        let callID = UUID().uuidString
+        let arguments: Base.Arguments
+        do {
+            arguments = try Base.Arguments(raw)
+        } catch {
+            let text = "Error: \(base.name) was called with arguments that do not match its schema: \(Self.describe(error)). Received \(raw.jsonString). Check the parameters of \(base.name) and call it again, or use the tool those arguments belong to."
+            return await gate.shapeResult(text, toolName: base.name, callID: callID, duration: 0, failed: true)
+        }
         let annotations = (base as? any AnnotatedTool)?.annotations
         let invocation = ToolInvocation(toolName: base.name, arguments: arguments.generatedContent, annotations: annotations)
-        let callID = UUID().uuidString
 
         switch try await gate.authorize(invocation) {
         case .denied(let reason):
@@ -166,6 +179,11 @@ public struct Gated<Base: Tool>: Tool where Base.Arguments: ConvertibleToGenerat
             let text = "Error: \(base.name) failed: \(Self.describe(error))"
             return await gate.shapeResult(text, toolName: base.name, callID: callID, duration: Date().timeIntervalSince(started), failed: true)
         }
+    }
+
+    /// Typed arguments, for callers that have them.
+    public func call(arguments: Base.Arguments) async throws -> String {
+        try await call(arguments: arguments.generatedContent)
     }
 
     /// Unwraps the framework's tool-call wrapper so the model sees the real cause.

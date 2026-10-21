@@ -27,6 +27,12 @@ public struct OpenRouterLanguageModel: LanguageModel {
     public var providerPreferences: [String: JSONValue]
     /// Any further request fields, merged last. Use for plugins or experiments.
     public var additionalParameters: [String: JSONValue]
+    /// Called once for every generation that completes, with what OpenRouter
+    /// charged for it. Every session on this model reports here, including
+    /// sub-agents and compaction summaries that share it, which is what lets
+    /// an app account for calls that never reach a saved transcript. Called
+    /// off the main actor, possibly from several requests at once.
+    public var usageHandler: (@Sendable (OpenRouterUsage) -> Void)?
 
     public init(
         modelID: String,
@@ -36,7 +42,8 @@ public struct OpenRouterLanguageModel: LanguageModel {
         usesPromptCache: Bool = true,
         sessionID: String? = nil,
         providerPreferences: [String: JSONValue] = [:],
-        additionalParameters: [String: JSONValue] = [:]
+        additionalParameters: [String: JSONValue] = [:],
+        usageHandler: (@Sendable (OpenRouterUsage) -> Void)? = nil
     ) {
         self.modelID = modelID
         self.capabilities = capabilities
@@ -46,6 +53,32 @@ public struct OpenRouterLanguageModel: LanguageModel {
         self.sessionID = sessionID
         self.providerPreferences = providerPreferences
         self.additionalParameters = additionalParameters
+        self.usageHandler = usageHandler
+    }
+}
+
+/// One completed generation's usage, as OpenRouter reports it at the end of
+/// the stream.
+public struct OpenRouterUsage: Sendable, Equatable {
+    /// OpenRouter's id for the generation, unique across requests.
+    public var generationID: String?
+    /// The model that answered, which may differ from the one asked for.
+    public var model: String?
+    /// Dollars. Nil when OpenRouter sent no cost.
+    public var cost: Double?
+    public var inputTokens: Int
+    public var cachedTokens: Int
+    public var outputTokens: Int
+    public var reasoningTokens: Int
+
+    public init(generationID: String?, model: String?, cost: Double?, inputTokens: Int = 0, cachedTokens: Int = 0, outputTokens: Int = 0, reasoningTokens: Int = 0) {
+        self.generationID = generationID
+        self.model = model
+        self.cost = cost
+        self.inputTokens = inputTokens
+        self.cachedTokens = cachedTokens
+        self.outputTokens = outputTokens
+        self.reasoningTokens = reasoningTokens
     }
 }
 

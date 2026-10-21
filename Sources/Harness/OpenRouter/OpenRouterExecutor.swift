@@ -57,7 +57,7 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
             let dump = DebugDump(directory: configuration.debugDirectory, requestID: request.id, attempt: attempt)
             dump.writeRequest(body)
             do {
-                try await performOnce(urlRequest, channel: channel, dump: dump)
+                try await performOnce(urlRequest, channel: channel, dump: dump, usageHandler: model.usageHandler)
                 return
             } catch let failure as TransientFailure {
                 guard attempt < max(policy.maximumAttempts, 1) else { throw Self.mapped(failure.underlying) }
@@ -70,7 +70,7 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         }
     }
 
-    private func performOnce(_ urlRequest: URLRequest, channel: LanguageModelExecutorGenerationChannel, dump: DebugDump) async throws {
+    private func performOnce(_ urlRequest: URLRequest, channel: LanguageModelExecutorGenerationChannel, dump: DebugDump, usageHandler: (@Sendable (OpenRouterUsage) -> Void)?) async throws {
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
         let started = Date()
@@ -107,10 +107,16 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
             guard let event = parser.feed(line) else { return false }
             if event.data == "[DONE]" { return true }
             for translated in try translator.handle(data: event.data) {
-                await channel.send(try translated.channelEvent())
-                delivered = true
+                try await send(translated)
             }
             return false
+        }
+        func send(_ translated: ResponsesStreamTranslator.Event) async throws {
+            await channel.send(try translated.channelEvent())
+            delivered = true
+            if case .usage(_, let usage, let metadata) = translated {
+                usageHandler?(OpenRouterUsage(usage, metadata: metadata))
+            }
         }
         do {
             for try await byte in bytes {
@@ -128,8 +134,7 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
                 if !buffer.isEmpty { _ = try await deliver(String(decoding: buffer, as: UTF8.self)) }
                 if let event = parser.flush(), event.data != "[DONE]" {
                     for translated in try translator.handle(data: event.data) {
-                        await channel.send(try translated.channelEvent())
-                        delivered = true
+                        try await send(translated)
                     }
                 }
             }
@@ -190,6 +195,22 @@ public struct OpenRouterExecutor: LanguageModelExecutor {
         }
         request.httpBody = try body.encoded()
         return request
+    }
+}
+
+// MARK: - Usage
+
+extension OpenRouterUsage {
+    init(_ usage: ResponsesStreamTranslator.Usage, metadata: [String: JSONValue]) {
+        self.init(
+            generationID: (metadata[OpenRouterMetadataKey.generationID] ?? metadata[OpenRouterMetadataKey.responseID])?.stringValue,
+            model: metadata[OpenRouterMetadataKey.model]?.stringValue,
+            cost: metadata[OpenRouterMetadataKey.cost]?.doubleValue,
+            inputTokens: usage.inputTokens,
+            cachedTokens: usage.cachedTokens,
+            outputTokens: usage.outputTokens,
+            reasoningTokens: usage.reasoningTokens
+        )
     }
 }
 

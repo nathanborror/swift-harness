@@ -93,6 +93,32 @@ final class MockTransport: URLProtocol {
         #expect(MockTransport.requests.count == 2)
     }
 
+    @Test func reportsEachCompletedGenerationsCost() async throws {
+        MockTransport.reset([
+            .init(status: 503, body: Data(#"{"error":{"code":503,"message":"overloaded"}}"#.utf8)),
+            .init(status: 200, headers: ["x-generation-id": "gen-usage"], body: try stream("stream-text")),
+        ])
+        let reported = Reported()
+        var (executor, model) = makeExecutor()
+        model.usageHandler = { reported.append($0) }
+        try await respond(executor, model)
+
+        let usage = reported.values
+        #expect(usage.count == 1, "a failed attempt reports nothing")
+        #expect(usage.first?.generationID == "gen-usage")
+        #expect(usage.first?.cost == 0.002454)
+        #expect(usage.first?.model == "anthropic/claude-sonnet-4.6")
+        #expect(usage.first?.inputTokens == 693)
+        #expect(usage.first?.outputTokens == 25)
+    }
+
+    private final class Reported: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [OpenRouterUsage] = []
+        var values: [OpenRouterUsage] { lock.withLock { stored } }
+        func append(_ usage: OpenRouterUsage) { lock.withLock { stored.append(usage) } }
+    }
+
     @Test func doesNotRetryClientErrors() async throws {
         MockTransport.reset([
             .init(status: 400, body: Data(#"{"error":{"code":400,"message":"bad field"}}"#.utf8)),

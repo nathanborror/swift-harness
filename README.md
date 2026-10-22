@@ -20,7 +20,7 @@ The credential comes from the `OPENROUTER_API_KEY` environment variable by defau
 
 ## Sessions
 
-`SessionDirectory` is the on-disk home of one session: an append-only `events.jsonl`, a saved `transcript.json`, a `session.json` manifest with the workspace and model so a later launch can resume it, and an `outputs/` folder for oversized tool results. `SessionLog` is an actor that appends `HarnessEvent` records to the JSONL file. A logging failure never stops a reply; the last error is kept on the log for the app to surface.
+`SessionDirectory` is the on-disk home of one session: an append-only `events.jsonl`, a saved `transcript.json`, a `session.json` manifest with the model and whatever the toolsets record, such as a coding session's workspace, so a later launch can resume it, and an `outputs/` folder for oversized tool results. `SessionLog` is an actor that appends `HarnessEvent` records to the JSONL file. A logging failure never stops a reply; the last error is kept on the log for the app to surface.
 
 Both attach to a dynamic profile as modifiers. `.logging(to:)` records every prompt, reasoning entry, response, tool call, and tool output as the session produces them. `.persistingTranscript(in:)` saves the history after each response and tool output, so a quit or crashed app resumes by loading the transcript and creating a new session from it.
 
@@ -54,7 +54,7 @@ Results pass through `ToolResultShaper` before they reach the model. Output over
 
 A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a description. `SkillCatalog.discover(in:)` scans the roots an app chooses, parses the frontmatter leniently, and lets a later root override an earlier one on a name collision. Which folders to scan is a trust decision the app makes, since a repository's skills are instructions to the agent.
 
-`SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles` loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap.
+`SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles` loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap; the coding toolset adds them to the instructions.
 
 ## Context
 
@@ -78,7 +78,30 @@ Guards run before any model call and record why they skipped: disabled, expired,
 
 ## Runner
 
-`AgentRunner` assembles a session from an `AgentConfiguration`: the model, the workspace, where sessions and memory live, which skill roots to scan, the permission policy and prompter, and an optional context policy. It gates the coding and memory tools, adds a read-only explorer sub-agent, and runs one prompt, reporting text and events to an `AgentObserver`. Apps and the command line share this one wiring.
+`AgentRunner` assembles a session from an `AgentConfiguration`: the model, instructions that say what the agent is for, a list of toolsets, where sessions and memory live, which skill roots to scan, the permission policy and prompter, and an optional context policy. It runs one prompt, reporting text and events to an `AgentObserver`, or hands back the assembled session for many turns. Apps and the command line share this one wiring.
+
+A toolset is an `AgentToolset`: it returns its tools for a session, wrapping each with the session's gate so the call answers to the permission policy, and may add instructions and facts for the session manifest. `CodingToolset` is the coding agent's: the coding tools for one workspace, a read-only explorer sub-agent on the session's model, and the workspace's `AGENTS.md` files. `AgentConfiguration.coding(model:workspace:sessionRoot:)` builds a configuration around it with coding instructions. `ToolList` passes an app's own tools through without the gate. An agent with no workspace, such as one that works on a calendar, lists only its own toolsets. Memory tools come from the configuration's memory directory rather than a toolset.
+
+```swift
+struct CalendarToolset: AgentToolset {
+    let store: EventStore
+
+    func tools(in context: AgentToolsetContext) -> [any Tool] {
+        [context.gate.gate(ListEventsTool(store: store)), context.gate.gate(AddEventTool(store: store))]
+    }
+
+    var instructions: String? { "Times are in the person's time zone. Ask before adding an event that overlaps another." }
+}
+
+let configuration = AgentConfiguration(
+    model: OpenRouterLanguageModel(modelID: "anthropic/claude-sonnet-4.6"),
+    instructions: "You manage the person's calendar.",
+    toolsets: [CalendarToolset(store: store)],
+    sessionRoot: try SessionDirectory.defaultRoot(),
+    memory: try MemoryDirectory(root: try MemoryDirectory.defaultRoot(project: "calendar"))
+)
+let result = try await AgentRunner(configuration: configuration).run(prompt: "What's on Friday?")
+```
 
 The `harness` executable is the headless front end for macOS. `run` streams one prompt's reply with tool calls and their first line of output, or every event as a JSON line with `--json`, which is what another process reads. Permission asks go to the terminal, or are denied when stdin is not one; `--approve` allows everything.
 

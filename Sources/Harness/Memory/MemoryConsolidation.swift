@@ -34,7 +34,7 @@ public struct ModelConsolidationPlanner: ConsolidationPlanner {
     public func plan(index: String, candidates: [String]) async throws -> ConsolidationPlan {
         let numbered = candidates.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         let prompt = """
-            You maintain an agent's memory index. Below is the current index and a numbered list of candidate notes from recent sessions. Return one decision per candidate: add it as a new index line, merge it into an existing line, supersede an existing line that is no longer true, or drop it because it is an instance rather than a rule, derivable from the workspace, transient, or already covered. Write entries as general rules and durable facts, one line each, and keep what is specific such as paths and names.
+            You maintain an agent's memory index. Below is the current index and a numbered list of candidate notes from recent sessions. Return one decision per candidate: add it as a new index line, merge it into an existing line, supersede an existing line that is no longer true, or drop it because it is an instance rather than a rule, derivable from the files or tools at hand, transient, or already covered. Write entries as general rules and durable facts, one line each, and keep what is specific such as paths and names.
 
             <index>
             \(index.isEmpty ? "(empty)" : index)

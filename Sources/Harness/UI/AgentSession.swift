@@ -45,7 +45,7 @@ public final class AgentSession: AgentObserver {
         self.prompter = prompter
         let sink = JobResultSink()
         self.jobSink = sink
-        configuration.additionalTools.append(JobResponseTool(sink: sink))
+        configuration.toolsets.append(ToolList([JobResponseTool(sink: sink)]))
         self.runner = AgentRunner(configuration: configuration)
     }
 

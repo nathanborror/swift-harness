@@ -29,7 +29,7 @@ import Testing
     private func makeRunner() -> EvalRunner {
         let output = FileManager.default.temporaryDirectory.appending(path: "harness-evals-\(UUID().uuidString)")
         return EvalRunner(outputRoot: output) { workspace, sessionRoot in
-            AgentConfiguration(model: EchoModel(), workspace: workspace, sessionRoot: sessionRoot, policy: .allowAll, includesExplorer: false)
+            AgentConfiguration.coding(model: EchoModel(), workspace: workspace, sessionRoot: sessionRoot, policy: .allowAll, includesExplorer: false)
         }
     }
 

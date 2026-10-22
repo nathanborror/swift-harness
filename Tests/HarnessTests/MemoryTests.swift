@@ -44,7 +44,7 @@ import Testing
         #expect(recent.text.contains("first thing") && recent.text.contains("older"))
         #expect(!recent.text.contains("ancient"))
         let rendered = MemoryInstructions(directory: directory).rendered()
-        #expect(rendered.contains("untrusted workspace notes"))
+        #expect(rendered.contains("untrusted notes"))
     }
 
     @Test func searchesAllFilesByKeyword() throws {

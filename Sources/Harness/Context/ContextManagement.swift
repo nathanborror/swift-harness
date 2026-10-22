@@ -91,7 +91,7 @@ struct Compactor: Sendable {
         """
 
     static let flushTemplate = """
-        From the conversation below, list facts worth remembering in a later session: durable decisions, user preferences, lessons from failures, and where things live. One line each, specific, with a file path or source where possible. Skip anything already obvious from the workspace and never include secrets. If there is nothing durable, reply with exactly NONE.
+        From the conversation below, list facts worth remembering in a later session: durable decisions, user preferences, lessons from failures, and where things live. One line each, specific, with a file path or source where possible. Skip anything the agent can look up again and never include secrets. If there is nothing durable, reply with exactly NONE.
         """
 
     func compact(_ entries: [Transcript.Entry]) async throws -> [Transcript.Entry] {

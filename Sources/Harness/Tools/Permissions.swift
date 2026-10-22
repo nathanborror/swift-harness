@@ -8,7 +8,7 @@ public struct ToolAnnotations: Sendable, Equatable, Codable {
     public var isReadOnly: Bool
     /// The tool can delete or overwrite in a way that is hard to reverse.
     public var isDestructive: Bool
-    /// The tool reaches outside the workspace: network, other apps, other devices.
+    /// The tool reaches the outside world: network, other apps, other devices.
     public var isOpenWorld: Bool
 
     public init(isReadOnly: Bool = false, isDestructive: Bool = false, isOpenWorld: Bool = false) {
@@ -95,7 +95,7 @@ public struct PermissionRule: Sendable {
         PermissionRule(name: "annotation:destructive", decision: decision, reason: reason) { $0.annotations?.isDestructive == true }
     }
 
-    /// Matches tools annotated as reaching outside the workspace.
+    /// Matches tools annotated as reaching the outside world.
     public static func openWorld(_ decision: PermissionDecision, reason: String? = nil) -> PermissionRule {
         PermissionRule(name: "annotation:openWorld", decision: decision, reason: reason) { $0.annotations?.isOpenWorld == true }
     }

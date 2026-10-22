@@ -42,7 +42,7 @@ import Testing
     private func makeConfiguration() throws -> AgentConfiguration {
         let base = FileManager.default.temporaryDirectory.appending(path: "harness-agentsession-\(UUID().uuidString)")
         let workspace = try Workspace(root: base.appending(path: "ws"))
-        return AgentConfiguration(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
+        return AgentConfiguration.coding(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
     }
 
     private static func kind(of event: HarnessEvent) -> String {
@@ -142,7 +142,7 @@ import Testing
     private func makeConfiguration() throws -> AgentConfiguration {
         let base = FileManager.default.temporaryDirectory.appending(path: "harness-heartbeat-\(UUID().uuidString)")
         let workspace = try Workspace(root: base.appending(path: "ws"))
-        return AgentConfiguration(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
+        return AgentConfiguration.coding(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
     }
 
     @Test @MainActor func heartbeatRunsInTheMainSessionAndTagsItsPrompt() async throws {

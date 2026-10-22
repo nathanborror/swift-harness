@@ -42,7 +42,7 @@ struct HarnessCLI {
         var options = options
         options.prompt = parts[1]
         if let manifest = directory.loadManifest() {
-            if !options.workspaceWasSet { options.workspace = manifest.workspacePath }
+            if !options.workspaceWasSet, let workspace = manifest.metadata[CodingToolset.workspaceMetadataKey] { options.workspace = workspace }
             if !options.modelWasSet, let modelID = manifest.modelID { options.model = modelID }
         }
         try await run(options, resuming: directory)
@@ -55,7 +55,7 @@ struct HarnessCLI {
         for directory in list.prefix(50) {
             let manifest = directory.loadManifest()
             let entries = (try? directory.loadTranscript())?.count ?? 0
-            print("\(directory.sessionID)  \(manifest?.modelID ?? "-")  \(entries) entries  \(manifest?.workspacePath ?? "")")
+            print("\(directory.sessionID)  \(manifest?.modelID ?? "-")  \(entries) entries  \(manifest?.metadata[CodingToolset.workspaceMetadataKey] ?? "")")
         }
     }
 
@@ -70,7 +70,7 @@ struct HarnessCLI {
         var model = resolved.model
         model.sessionID = existing?.sessionID
         if let debug = options.debugDirectory { model.executorConfiguration.debugDirectory = URL(fileURLWithPath: debug) }
-        let configuration = AgentConfiguration(
+        let configuration = AgentConfiguration.coding(
             model: model,
             workspace: workspace,
             sessionRoot: existing?.url.deletingLastPathComponent() ?? sessionRoot,
@@ -103,7 +103,7 @@ struct HarnessCLI {
         let judge: (any LanguageModel)? = options.judgeModel.map { OpenRouterLanguageModel(modelID: $0, defaultReasoningEffort: "low") }
         let resolved = try await resolveModel(options)
         let runner = EvalRunner(outputRoot: outputRoot, judge: judge) { workspace, sessionRoot in
-            AgentConfiguration(
+            AgentConfiguration.coding(
                 model: resolved.model,
                 workspace: workspace,
                 sessionRoot: sessionRoot,

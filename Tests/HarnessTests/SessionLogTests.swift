@@ -52,7 +52,7 @@ import Testing
         let root = FileManager.default.temporaryDirectory.appending(path: "harness-manifest-\(UUID().uuidString)")
         let directory = try SessionDirectory(root: root)
         #expect(directory.loadManifest() == nil)
-        let manifest = SessionDirectory.Manifest(workspacePath: "/tmp/ws", modelID: "m", createdAt: Date(timeIntervalSince1970: 1_800_000_000), title: "t")
+        let manifest = SessionDirectory.Manifest(modelID: "m", createdAt: Date(timeIntervalSince1970: 1_800_000_000), title: "t", metadata: ["workspace": "/tmp/ws"])
         try directory.saveManifest(manifest)
         #expect(directory.loadManifest() == manifest)
         #expect(SessionDirectory.find(directory.sessionID, in: root) == nil, "no transcript yet")

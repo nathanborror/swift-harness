@@ -58,16 +58,34 @@ public struct SessionDirectory: Sendable, Hashable {
 
     /// What a later launch needs to resume this session.
     public struct Manifest: Codable, Sendable, Equatable {
-        public var workspacePath: String
         public var modelID: String?
         public var createdAt: Date
         public var title: String?
+        /// What the session's toolsets recorded, such as `workspace` for the folder a coding session worked in.
+        public var metadata: [String: String]
 
-        public init(workspacePath: String, modelID: String?, createdAt: Date = Date(), title: String? = nil) {
-            self.workspacePath = workspacePath
+        public init(modelID: String?, createdAt: Date = Date(), title: String? = nil, metadata: [String: String] = [:]) {
             self.modelID = modelID
             self.createdAt = createdAt
             self.title = title
+            self.metadata = metadata
+        }
+
+        /// Manifests written before toolsets kept the workspace in a top-level `workspacePath`.
+        private enum LegacyKeys: String, CodingKey {
+            case workspacePath
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            modelID = try container.decodeIfPresent(String.self, forKey: .modelID)
+            createdAt = try container.decode(Date.self, forKey: .createdAt)
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+            metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
+            let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+            if metadata["workspace"] == nil, let path = try legacy.decodeIfPresent(String.self, forKey: .workspacePath) {
+                metadata["workspace"] = path
+            }
         }
     }
 

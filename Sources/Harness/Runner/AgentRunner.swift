@@ -7,54 +7,45 @@ public protocol AgentObserver: Sendable {
     func event(_ event: HarnessEvent) async
 }
 
-/// Everything needed to assemble one agent session: the model, the workspace,
-/// where sessions and memory live, which skills to load, and how tools are gated.
+/// Everything needed to assemble one agent session: the model, what the agent
+/// is for, the toolsets it works with, where sessions and memory live, which
+/// skills to load, and how tools are gated.
 public struct AgentConfiguration: Sendable {
     public var model: any LanguageModel
-    public var workspace: Workspace
+    /// What the agent is for. Placed first in the instructions.
+    public var instructions: String
+    /// The tools the agent works with, in order. Memory tools are added from `memory`.
+    public var toolsets: [any AgentToolset]
     public var sessionRoot: URL
     public var memory: MemoryDirectory?
     public var skillRoots: [URL]
     public var policy: PermissionPolicy
     public var prompter: (any PermissionPrompter)?
     public var contextPolicy: ContextPolicy?
-    public var instructions: String
-    /// Adds a read-only explorer sub-agent on the same model.
-    public var includesExplorer: Bool
     public var sessionID: String?
-    /// Further tools the app supplies, gated like the rest.
-    public var additionalTools: [any Tool]
-
-    public static let defaultInstructions = """
-        You are a coding agent working in a workspace. Use the tools: read before you change anything, keep diffs scoped, and verify your work by running the project's checks where they exist. When you finish, state what you changed and what you did not do.
-        """
 
     public init(
         model: any LanguageModel,
-        workspace: Workspace,
+        instructions: String,
+        toolsets: [any AgentToolset] = [],
         sessionRoot: URL,
         memory: MemoryDirectory? = nil,
         skillRoots: [URL] = [],
         policy: PermissionPolicy = .default,
         prompter: (any PermissionPrompter)? = nil,
         contextPolicy: ContextPolicy? = nil,
-        instructions: String = AgentConfiguration.defaultInstructions,
-        includesExplorer: Bool = true,
-        sessionID: String? = nil,
-        additionalTools: [any Tool] = []
+        sessionID: String? = nil
     ) {
         self.model = model
-        self.workspace = workspace
+        self.instructions = instructions
+        self.toolsets = toolsets
         self.sessionRoot = sessionRoot
         self.memory = memory
         self.skillRoots = skillRoots
         self.policy = policy
         self.prompter = prompter
         self.contextPolicy = contextPolicy
-        self.instructions = instructions
-        self.includesExplorer = includesExplorer
         self.sessionID = sessionID
-        self.additionalTools = additionalTools
     }
 }
 
@@ -90,31 +81,20 @@ public struct AgentRunner: Sendable {
         let directory = try SessionDirectory(root: configuration.sessionRoot, sessionID: configuration.sessionID ?? SessionDirectory.makeSessionID())
         let log = try directory.makeLog()
         let gate = ToolGate(policy: configuration.policy, prompter: configuration.prompter, shaper: ToolResultShaper(outputsDirectory: directory.outputsURL), log: log)
-        let coding = CodingTools(workspace: configuration.workspace)
-        var tools = coding.gated(by: gate)
+        let context = AgentToolsetContext(model: configuration.model, gate: gate, log: log, directory: directory)
+        var tools: [any Tool] = []
+        for toolset in configuration.toolsets {
+            tools += try toolset.tools(in: context)
+        }
         if let memory = configuration.memory {
             tools += try MemoryTools(directory: memory).gated(by: gate)
         }
-        if configuration.includesExplorer {
-            var explorerTools: [any Tool] = [gate.gate(coding.read)]
-            #if os(macOS)
-            explorerTools.append(gate.gate(coding.shell))
-            #endif
-            let explorer = SubagentDefinition(
-                name: "explorer",
-                description: "Read-only exploration of the workspace: finds files, reads code, answers questions about it.",
-                model: configuration.model,
-                instructions: "You explore a codebase and report back. You can only read. Be concrete: cite paths and line ranges. Reply with the findings only.",
-                tools: explorerTools
-            )
-            tools.append(gate.gate(TaskTool(agents: [explorer], log: log)))
-        }
-        tools += configuration.additionalTools
+        let toolsetInstructions = configuration.toolsets.compactMap(\.instructions)
 
         let profile = AgentProfile(
             configuration: configuration,
             tools: tools,
-            instructionFiles: InstructionFiles.load(workspace: configuration.workspace),
+            toolsetInstructions: toolsetInstructions.isEmpty ? nil : toolsetInstructions.joined(separator: "\n\n"),
             skills: SkillCatalog.discover(in: configuration.skillRoots),
             directory: directory,
             log: log,
@@ -122,7 +102,10 @@ public struct AgentRunner: Sendable {
         )
         let modelID = (configuration.model as? OpenRouterLanguageModel)?.modelID
         if directory.loadManifest() == nil {
-            try? directory.saveManifest(.init(workspacePath: configuration.workspace.root.path, modelID: modelID))
+            let metadata = configuration.toolsets.reduce(into: [String: String]()) { merged, toolset in
+                merged.merge(toolset.manifestMetadata) { _, later in later }
+            }
+            try? directory.saveManifest(.init(modelID: modelID, metadata: metadata))
         }
         await log.record(.sessionStarted(sessionID: directory.sessionID, modelID: modelID))
         await observer?.event(.sessionStarted(sessionID: directory.sessionID, modelID: modelID))
@@ -163,7 +146,7 @@ public struct AgentRunner: Sendable {
 struct AgentProfile: LanguageModelSession.DynamicProfile, Sendable {
     let configuration: AgentConfiguration
     let tools: [any Tool]
-    let instructionFiles: InstructionFiles
+    let toolsetInstructions: String?
     let skills: SkillCatalog
     let directory: SessionDirectory
     let log: SessionLog
@@ -189,8 +172,8 @@ struct AgentProfile: LanguageModelSession.DynamicProfile, Sendable {
         let profile = Profile {
             Instructions(configuration.instructions)
             tools
-            if let instructions = instructionFiles.instructions {
-                instructions
+            if let toolsetInstructions {
+                Instructions(toolsetInstructions)
             }
             SkillsInstructions(catalog: skills)
             if let memory = configuration.memory {

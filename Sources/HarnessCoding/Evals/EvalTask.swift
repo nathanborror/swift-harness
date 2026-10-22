@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 
 /// One eval task: a prompt, how to seed the workspace, and how to grade the result.
 ///

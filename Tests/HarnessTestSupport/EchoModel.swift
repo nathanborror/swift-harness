@@ -3,23 +3,28 @@ import FoundationModels
 
 /// A test model whose executor answers with a transform of the last prompt and
 /// calls a tool when the prompt asks for one. No network, deterministic.
-struct EchoModel: LanguageModel {
-    typealias Executor = EchoExecutor
-    struct Configuration: Hashable, Sendable { var id = "echo" }
+public struct EchoModel: LanguageModel {
+    public typealias Executor = EchoExecutor
+    public struct Configuration: Hashable, Sendable {
+        public var id = "echo"
+        public init() {}
+    }
 
-    var capabilities: LanguageModelCapabilities { LanguageModelCapabilities([.toolCalling, .vision]) }
-    var executorConfiguration: Configuration { Configuration() }
+    public init() {}
+
+    public var capabilities: LanguageModelCapabilities { LanguageModelCapabilities([.toolCalling, .vision]) }
+    public var executorConfiguration: Configuration { Configuration() }
 }
 
-struct EchoExecutor: LanguageModelExecutor {
-    typealias Configuration = EchoModel.Configuration
-    typealias Model = EchoModel
+public struct EchoExecutor: LanguageModelExecutor {
+    public typealias Configuration = EchoModel.Configuration
+    public typealias Model = EchoModel
 
-    init(configuration: Configuration) throws {}
+    public init(configuration: Configuration) throws {}
 
-    func prewarm(model: EchoModel, transcript: Transcript) {}
+    public func prewarm(model: EchoModel, transcript: Transcript) {}
 
-    func respond(to request: LanguageModelExecutorGenerationRequest, model: EchoModel, streamingInto channel: LanguageModelExecutorGenerationChannel) async throws {
+    public func respond(to request: LanguageModelExecutorGenerationRequest, model: EchoModel, streamingInto channel: LanguageModelExecutorGenerationChannel) async throws {
         var lastPrompt = ""
         var lastToolOutput: String?
         for entry in request.transcript {
@@ -47,6 +52,6 @@ struct EchoExecutor: LanguageModelExecutor {
     }
 }
 
-struct EchoFailure: Error, LocalizedError {
-    var errorDescription: String? { "provider exploded" }
+public struct EchoFailure: Error, LocalizedError {
+    public var errorDescription: String? { "provider exploded" }
 }

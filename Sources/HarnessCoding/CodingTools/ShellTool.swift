@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import Harness
 import FoundationModels
 
 /// Runs a shell command inside the workspace.
@@ -45,7 +46,7 @@ public struct ShellTool: AnnotatedTool {
         var text = result.output.trimmingCharacters(in: .newlines)
         if text.isEmpty { text = "(no output)" }
         if result.timedOut {
-            return text + "\n\n[" + (CodingToolError.timeout(seconds: Int(limit)).errorDescription ?? "timed out") + "]"
+            return text + "\n\n[Command did not complete within \(Int(limit)) seconds and was killed. If it needs longer and is not waiting for input, retry with a larger timeout_seconds.]"
         }
         if result.exitCode != 0 {
             text += "\n\n[exit code \(result.exitCode)]"

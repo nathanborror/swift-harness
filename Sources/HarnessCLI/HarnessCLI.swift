@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import Harness
+import HarnessCoding
 
 /// A headless runner: one prompt or an eval suite, the full harness, the event stream on stdout.
 ///

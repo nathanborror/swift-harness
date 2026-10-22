@@ -11,6 +11,7 @@ let package = Package(
     ],
     products: [
         .library(name: "Harness", targets: ["Harness"]),
+        .library(name: "HarnessCoding", targets: ["HarnessCoding"]),
         .executable(name: "harness", targets: ["HarnessCLI"]),
     ],
     targets: [
@@ -20,19 +21,40 @@ let package = Package(
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
+        .target(
+            name: "HarnessCoding",
+            dependencies: ["Harness"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
         .executableTarget(
             name: "HarnessCLI",
-            dependencies: ["Harness"],
+            dependencies: ["Harness", "HarnessCoding"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .target(
+            name: "HarnessTestSupport",
+            path: "Tests/HarnessTestSupport",
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
         .testTarget(
             name: "HarnessTests",
-            dependencies: ["Harness"],
+            dependencies: ["Harness", "HarnessTestSupport"],
             resources: [
                 .copy("Fixtures"),
             ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .testTarget(
+            name: "HarnessCodingTests",
+            dependencies: ["Harness", "HarnessCoding", "HarnessTestSupport"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

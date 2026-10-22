@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 
 /// Permission rules for the shell tool.
 ///

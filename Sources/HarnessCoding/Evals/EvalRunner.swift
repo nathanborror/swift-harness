@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 import FoundationModels
 
 public struct TrialResult: Codable, Sendable, Equatable {
@@ -130,7 +131,7 @@ public struct EvalRunner: Sendable {
                     group.addTask { try await runner.run(prompt: task.prompt) }
                     group.addTask {
                         try await Task.sleep(for: .seconds(timeout))
-                        throw CodingToolError.timeout(seconds: timeout)
+                        throw TimeLimitError(seconds: timeout)
                     }
                     let first = try await group.next()!
                     group.cancelAll()

@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+import HarnessTestSupport
 
 /// A toolset with no workspace: one gated tool, instructions, and a manifest fact.
 struct GreetingToolset: AgentToolset {

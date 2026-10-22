@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 import FoundationModels
 
 /// The built-in coding tool set for a workspace.
@@ -16,9 +17,9 @@ public struct CodingTools: Sendable {
         self.context = context
     }
 
-    public var read: ReadTool { ReadTool(context: context) }
-    public var edit: EditTool { EditTool(context: context) }
-    public var write: WriteTool { WriteTool(context: context) }
+    public var read: ReadTool { ReadTool(context: context.files) }
+    public var edit: EditTool { EditTool(context: context.files) }
+    public var write: WriteTool { WriteTool(context: context.files) }
 
     #if os(macOS)
     public var shell: ShellTool { ShellTool(context: context) }

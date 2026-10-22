@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 import FoundationModels
 
 /// A coding agent's toolset for one workspace: read, edit, and write, the

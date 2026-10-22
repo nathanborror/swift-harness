@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+@testable import HarnessCoding
 
 @Suite struct CodingToolsTests {
     private func makeTools() throws -> (CodingTools, URL) {
@@ -29,7 +30,7 @@ import Testing
     @Test func readSuggestsSimilarNames() async throws {
         let (tools, root) = try makeTools()
         try "x".write(to: root.appending(path: "Package.swift"), atomically: true, encoding: .utf8)
-        await #expect(throws: CodingToolError.notFound(path: "Packag.swift", suggestions: [root.appending(path: "Package.swift").path])) {
+        await #expect(throws: FileToolError.notFound(path: "Packag.swift", suggestions: [root.appending(path: "Package.swift").path])) {
             _ = try await tools.read.call(arguments: .init(path: "Packag.swift", offset: nil, limit: nil))
         }
     }
@@ -39,14 +40,14 @@ import Testing
         let file = root.appending(path: "a.txt")
         try "hello world\nhello again\n".write(to: file, atomically: true, encoding: .utf8)
 
-        await #expect(throws: CodingToolError.notRead(path: "a.txt")) {
+        await #expect(throws: FileToolError.notRead(path: "a.txt")) {
             _ = try await tools.edit.call(arguments: .init(path: "a.txt", edits: [.init(oldText: "hello", newText: "bye")], replaceAll: nil))
         }
         _ = try await tools.read.call(arguments: .init(path: "a.txt", offset: nil, limit: nil))
-        await #expect(throws: CodingToolError.textNotUnique(path: "a.txt", index: 0, occurrences: 2)) {
+        await #expect(throws: FileToolError.textNotUnique(path: "a.txt", index: 0, occurrences: 2)) {
             _ = try await tools.edit.call(arguments: .init(path: "a.txt", edits: [.init(oldText: "hello", newText: "bye")], replaceAll: nil))
         }
-        await #expect(throws: CodingToolError.textNotFound(path: "a.txt", index: 0)) {
+        await #expect(throws: FileToolError.textNotFound(path: "a.txt", index: 0)) {
             _ = try await tools.edit.call(arguments: .init(path: "a.txt", edits: [.init(oldText: "nope", newText: "bye")], replaceAll: nil))
         }
         let summary = try await tools.edit.call(arguments: .init(path: "a.txt", edits: [.init(oldText: "hello world", newText: "bye world"), .init(oldText: "again", newText: "once more")], replaceAll: nil))
@@ -64,7 +65,7 @@ import Testing
         try "v1".write(to: file, atomically: true, encoding: .utf8)
         _ = try await tools.read.call(arguments: .init(path: "b.txt", offset: nil, limit: nil))
         try "v2 changed".write(to: file, atomically: true, encoding: .utf8)
-        await #expect(throws: CodingToolError.changedSinceRead(path: "b.txt")) {
+        await #expect(throws: FileToolError.changedSinceRead(path: "b.txt")) {
             _ = try await tools.edit.call(arguments: .init(path: "b.txt", edits: [.init(oldText: "v2", newText: "v3")], replaceAll: nil))
         }
     }
@@ -85,7 +86,7 @@ import Testing
         #expect(try String(contentsOf: root.appending(path: "deep/dir/new.txt"), encoding: .utf8) == "fresh")
 
         try "old".write(to: root.appending(path: "existing.txt"), atomically: true, encoding: .utf8)
-        await #expect(throws: CodingToolError.notRead(path: "existing.txt")) {
+        await #expect(throws: FileToolError.notRead(path: "existing.txt")) {
             _ = try await tools.write.call(arguments: .init(path: "existing.txt", content: "clobber"))
         }
         _ = try await tools.read.call(arguments: .init(path: "existing.txt", offset: nil, limit: nil))

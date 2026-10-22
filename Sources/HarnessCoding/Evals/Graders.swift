@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 import FoundationModels
 
 /// A check on the outcome of a trial. Deterministic graders look at the

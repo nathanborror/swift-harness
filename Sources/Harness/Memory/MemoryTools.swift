@@ -53,15 +53,15 @@ public struct MemorySearchTool: AnnotatedTool {
 }
 
 /// The memory tool set: read, edit, and write over the memory directory plus
-/// note and search. Read, edit, and write are the coding tools rooted at the
+/// note and search. Read, edit, and write are the file tools rooted at the
 /// memory folder, so the same stale-read rules apply.
 public struct MemoryTools: Sendable {
     public let directory: MemoryDirectory
-    public let context: CodingToolContext
+    public let context: FileToolContext
 
     public init(directory: MemoryDirectory) throws {
         self.directory = directory
-        self.context = CodingToolContext(workspace: try Workspace(root: directory.root))
+        self.context = FileToolContext(workspace: try Workspace(root: directory.root))
     }
 
     public var read: ReadTool { ReadTool(context: context, name: "memory_read") }

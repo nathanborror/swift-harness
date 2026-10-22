@@ -16,9 +16,9 @@ public struct ReadTool: AnnotatedTool {
     public let name: String
     public let description = "Reads a text file as a window of lines, or lists a directory. Large files are paged: the footer says how to continue. Prefer a generous window over many tiny reads."
     public let annotations: ToolAnnotations = .readOnly
-    let context: CodingToolContext
+    let context: FileToolContext
 
-    public init(context: CodingToolContext, name: String = "read") {
+    public init(context: FileToolContext, name: String = "read") {
         self.context = context
         self.name = name
     }
@@ -27,12 +27,12 @@ public struct ReadTool: AnnotatedTool {
         let url = try context.workspace.url(for: arguments.path)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-            throw CodingToolError.notFound(path: arguments.path, suggestions: CodingToolSupport.suggestions(for: url))
+            throw FileToolError.notFound(path: arguments.path, suggestions: FileToolSupport.suggestions(for: url))
         }
         if isDirectory.boolValue {
             return try listDirectory(url)
         }
-        let text = try CodingToolSupport.readText(at: url, path: arguments.path)
+        let text = try FileToolSupport.readText(at: url, path: arguments.path)
         await context.reads.recordRead(url)
         return window(of: text, offset: arguments.offset, limit: arguments.limit)
     }

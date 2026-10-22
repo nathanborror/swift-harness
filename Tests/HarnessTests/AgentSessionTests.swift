@@ -3,6 +3,7 @@ import FoundationModels
 import CoreGraphics
 import Testing
 @testable import Harness
+import HarnessTestSupport
 
 @Suite struct UIPermissionPrompterTests {
     @Test @MainActor func respondResolvesThePendingRequest() async throws {
@@ -38,11 +39,21 @@ import Testing
     }
 }
 
+/// Read and write over a test folder, gated.
+struct FileTestToolset: AgentToolset {
+    let workspace: Workspace
+
+    func tools(in context: AgentToolsetContext) -> [any Tool] {
+        let files = FileToolContext(workspace: workspace)
+        return [context.gate.gate(ReadTool(context: files)), context.gate.gate(WriteTool(context: files))]
+    }
+}
+
 @Suite struct AgentSessionTests {
     private func makeConfiguration() throws -> AgentConfiguration {
         let base = FileManager.default.temporaryDirectory.appending(path: "harness-agentsession-\(UUID().uuidString)")
         let workspace = try Workspace(root: base.appending(path: "ws"))
-        return AgentConfiguration.coding(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
+        return AgentConfiguration(model: EchoModel(), instructions: "Help with files.", toolsets: [FileTestToolset(workspace: workspace)], sessionRoot: base.appending(path: "sessions"), policy: .allowAll)
     }
 
     private static func kind(of event: HarnessEvent) -> String {
@@ -142,7 +153,7 @@ import Testing
     private func makeConfiguration() throws -> AgentConfiguration {
         let base = FileManager.default.temporaryDirectory.appending(path: "harness-heartbeat-\(UUID().uuidString)")
         let workspace = try Workspace(root: base.appending(path: "ws"))
-        return AgentConfiguration.coding(model: EchoModel(), workspace: workspace, sessionRoot: base.appending(path: "sessions"), policy: .allowAll, includesExplorer: false)
+        return AgentConfiguration(model: EchoModel(), instructions: "Help with files.", toolsets: [FileTestToolset(workspace: workspace)], sessionRoot: base.appending(path: "sessions"), policy: .allowAll)
     }
 
     @Test @MainActor func heartbeatRunsInTheMainSessionAndTagsItsPrompt() async throws {

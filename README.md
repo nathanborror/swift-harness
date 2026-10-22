@@ -1,6 +1,8 @@
 # swift-harness
 
-A dependency-free Swift agent harness for macOS 27 and iOS 27, built on Apple's FoundationModels framework. The framework already supplies the agent loop, the transcript, the `Tool` protocol, and lifecycle hooks. This package adds what the framework leaves to the app: a model executor for OpenRouter, a session log and transcript persistence, a sandboxed workspace, a permission gate with bounded tool results, and a set of coding tools. Everything composes onto a `LanguageModelSession` through dynamic profiles and tool wrappers, so an app keeps the framework's API and gains the harness underneath it.
+A dependency-free Swift agent harness for macOS 27 and iOS 27, built on Apple's FoundationModels framework. The framework already supplies the agent loop, the transcript, the `Tool` protocol, and lifecycle hooks. This package adds what the framework leaves to the app: a model executor for OpenRouter, a session log and transcript persistence, a sandboxed workspace with file tools, a permission gate with bounded tool results, memory, skills, a scheduler, and sub-agents. Everything composes onto a `LanguageModelSession` through dynamic profiles and tool wrappers, so an app keeps the framework's API and gains the harness underneath it.
+
+The package ships two libraries. `Harness` is the general agent, with nothing that assumes the agent writes code. `HarnessCoding` builds a coding agent on it: the shell, background processes, shell permission rules, `AGENTS.md` instruction files, an explorer sub-agent, and evals. An app whose agent works on something other than code depends on `Harness` alone.
 
 The design follows the five guides in `Research/`, which survey how production harnesses are built. Where the guides show consensus, this package takes the consensus default: an append-only log, exact-match edits with a stale-read check, read-only tools allowed by default, every denial returned to the model as a tool result, and tool output bounded before it enters the context window.
 
@@ -34,13 +36,13 @@ On macOS, child processes inherit the app's sandbox. There is no nested profile;
 
 `ToolGate` wraps any framework tool with `gate(_:)`. The wrapper keeps the tool's name, description, and schema, so the model sees no difference, and every call passes through a `PermissionPolicy`: an ordered rule list with a fallback, where the first matching rule wins. Rules match by tool name, by a predicate on a string argument, or by annotations a tool declares through `AnnotatedTool`: read-only, destructive, or open-world. The default policy allows read-only tools and asks for everything else.
 
-`ShellRules` is the shipped rule set for the shell: a deny list for the dangerous patterns such as privilege escalation, recursive deletes of the root or home, disk writes, piping a download into a shell, and force pushes; an ask list for the hard-to-reverse and network-reaching ones such as recursive deletes, pushes, discarding git work, installs, and infrastructure commands; and allow for the rest. It is a tripwire, not a boundary, since a command can be written to slip past any pattern; the boundary is the sandbox and the workspace. `PermissionPolicy.coding` combines it with read-only allowed and edits asking, and `.unattended` turns the asks into denials for runs with nobody present.
+`ShellRules`, in `HarnessCoding`, is the shipped rule set for the shell: a deny list for the dangerous patterns such as privilege escalation, recursive deletes of the root or home, disk writes, piping a download into a shell, and force pushes; an ask list for the hard-to-reverse and network-reaching ones such as recursive deletes, pushes, discarding git work, installs, and infrastructure commands; and allow for the rest. It is a tripwire, not a boundary, since a command can be written to slip past any pattern; the boundary is the sandbox and the workspace. `PermissionPolicy.coding` combines it with read-only allowed and edits asking, and `.unattended` turns the asks into denials for runs with nobody present.
 
 An `ask` goes to a `PermissionPrompter` the app supplies, with allow-once, allow-always, and deny. A denial, and a tool that throws, return to the model as tool output so the loop continues. Only repeated denials escalate, by throwing `ToolGateError.escalation` and ending the turn. Every decision is logged.
 
 Results pass through `ToolResultShaper` before they reach the model. Output over the limit is written to the session's outputs folder and replaced by an excerpt plus a note saying what was cut and where the rest is. Empty output becomes `(no output)` so silence is never ambiguous.
 
-`CodingTools` provides the built-in set for a workspace: `read`, `edit`, and `write` on every platform, and `shell` on macOS. Read returns a window of lines with a footer that says how to continue, and lists directories. Edit replaces exact text that must appear once, refuses files the model has not read or that changed since, and preserves line endings and byte-order marks. Write creates parents and refuses to overwrite an unread file. Shell runs a fresh `/bin/sh` per call with a fixed environment, merged output, and a kill at the time limit.
+`ReadTool`, `EditTool`, and `WriteTool` work on the files in a workspace through a shared `FileToolContext`, on every platform. Read returns a window of lines with a footer that says how to continue, and lists directories. Edit replaces exact text that must appear once, refuses files the model has not read or that changed since, and preserves line endings and byte-order marks. Write creates parents and refuses to overwrite an unread file. `CodingTools`, in `HarnessCoding`, adds `shell` on macOS: a fresh `/bin/sh` per call with a fixed environment, merged output, and a kill at the time limit.
 
 ## Memory
 
@@ -48,13 +50,13 @@ Results pass through `ToolResultShaper` before they reach the model. Output over
 
 `MemoryConsolidation` promotes recent notes into the index on a schedule. Deterministic code picks the candidates, which are note lines from the last few days that the index does not already contain. A `ConsolidationPlanner` returns one decision per candidate, add, merge, supersede, or drop, and nothing else; the default planner asks a model through guided generation. The harness writes the entries itself with a date and a source, rejects a rewrite that removes more than a quarter of the existing entries or grows past the cap and falls back to appending, keeps the previous index under `archive/` as an undo, and appends a line to `consolidation.md` for a person to review. `Job.memoryConsolidation()` is the nightly job, paired with `MemoryConsolidationRunner` through a `CompositeJobRunner`.
 
-`MemoryTools` gives the model `memory_read`, `memory_edit`, and `memory_write`, which are the coding tools rooted at the memory folder with the same stale-read rules, plus `memory_note` for appending to today's note and `memory_search` for keyword search that returns a path and line with every hit. The protocol text in the instructions tells the model what to save, what to skip, and to write before its context is lost.
+`MemoryTools` gives the model `memory_read`, `memory_edit`, and `memory_write`, which are the file tools rooted at the memory folder with the same stale-read rules, plus `memory_note` for appending to today's note and `memory_search` for keyword search that returns a path and line with every hit. The protocol text in the instructions tells the model what to save, what to skip, and to write before its context is lost.
 
 ## Skills
 
 A skill is a folder with a `SKILL.md` whose frontmatter gives a name and a description. `SkillCatalog.discover(in:)` scans the roots an app chooses, parses the frontmatter leniently, and lets a later root override an earlier one on a name collision. Which folders to scan is a trust decision the app makes, since a repository's skills are instructions to the agent.
 
-`SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles` loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap; the coding toolset adds them to the instructions.
+`SkillsInstructions` puts the catalog into the instructions under a character budget, shortening descriptions before dropping names, together with a `skill` tool that loads a skill's body as tool output. Loading through a tool keeps the cached prefix intact. `InstructionFiles`, in `HarnessCoding`, loads `AGENTS.md` files from the workspace root down to a directory, broadest first, under a size cap; the coding toolset adds them to the instructions.
 
 ## Context
 
@@ -80,7 +82,7 @@ Guards run before any model call and record why they skipped: disabled, expired,
 
 `AgentRunner` assembles a session from an `AgentConfiguration`: the model, instructions that say what the agent is for, a list of toolsets, where sessions and memory live, which skill roots to scan, the permission policy and prompter, and an optional context policy. It runs one prompt, reporting text and events to an `AgentObserver`, or hands back the assembled session for many turns. Apps and the command line share this one wiring.
 
-A toolset is an `AgentToolset`: it returns its tools for a session, wrapping each with the session's gate so the call answers to the permission policy, and may add instructions and facts for the session manifest. `CodingToolset` is the coding agent's: the coding tools for one workspace, a read-only explorer sub-agent on the session's model, and the workspace's `AGENTS.md` files. `AgentConfiguration.coding(model:workspace:sessionRoot:)` builds a configuration around it with coding instructions. `ToolList` passes an app's own tools through without the gate. An agent with no workspace, such as one that works on a calendar, lists only its own toolsets. Memory tools come from the configuration's memory directory rather than a toolset.
+A toolset is an `AgentToolset`: it returns its tools for a session, wrapping each with the session's gate so the call answers to the permission policy, and may add instructions and facts for the session manifest. `CodingToolset`, in `HarnessCoding`, is the coding agent's: the coding tools for one workspace, a read-only explorer sub-agent on the session's model, and the workspace's `AGENTS.md` files. `AgentConfiguration.coding(model:workspace:sessionRoot:)` builds a configuration around it with coding instructions. `ToolList` passes an app's own tools through without the gate. An agent with no workspace, such as one that works on a calendar, lists only its own toolsets. Memory tools come from the configuration's memory directory rather than a toolset.
 
 ```swift
 struct CalendarToolset: AgentToolset {
@@ -122,11 +124,11 @@ swift run harness resume 20261008T062728-93d4f136 "Now add a test for it."
 
 `UIPermissionPrompter` turns an ask into state: the gate parks a request on `pending`, the view renders it, and `respond(_:)` resumes the tool call with allow once, allow always, or deny. Asks are served one at a time, and one that nobody answers within the timeout is denied, so a waiting tool call always ends.
 
-On macOS the shell tool can run a command in the background. The command's output streams to a file in the session's outputs folder, `process_status` returns its state and a bounded tail, `process_stop` ends it, and the manager's exit handler lets the app queue an event on the scheduler, which wakes the heartbeat within a rate limit so the agent continues without polling.
+On macOS the coding shell tool can run a command in the background when `CodingToolset` is given a `backgroundOutputs` folder. The command's output streams to a file there, `process_status` returns its state and a bounded tail, `process_stop` ends it, and the manager's exit handler lets the app queue an event on the scheduler, which wakes the heartbeat within a rate limit so the agent continues without polling.
 
 ## Evals
 
-An eval task is a folder with a `task.json`: a prompt, files to seed the workspace, optional setup command, graders, a timeout, and a suite name. `EvalRunner` runs each task for a number of trials, each in a fresh workspace with its own session folder, grades the outcome, and writes `report.json` and `report.txt` under the output root alongside every trial's workspace and session, so a failing trial can be read back in full.
+Evals live in `HarnessCoding`, since their graders read files in a workspace and run commands there. An eval task is a folder with a `task.json`: a prompt, files to seed the workspace, optional setup command, graders, a timeout, and a suite name. `EvalRunner` runs each task for a number of trials, each in a fresh workspace with its own session folder, grades the outcome, and writes `report.json` and `report.txt` under the output root alongside every trial's workspace and session, so a failing trial can be read back in full.
 
 Graders check the outcome, not the path: file contents, file presence, a command's exit code, the response text, which tools were called, and a cap on tool calls. A `judge` grader asks a model against a rubric through guided generation and may answer unknown, which counts against the trial but is reported separately. The `suite` field separates capability tasks, which climb from a low pass rate, from regression tasks, which should stay near full marks. Three regression tasks live in `evals/tasks/`.
 
@@ -138,26 +140,31 @@ swift run harness eval --only fix-add --judge-model anthropic/claude-haiku-4.5
 ## Layout
 
 ```
-Sources/Harness/
-  OpenRouter/        # LanguageModel and executor for the Responses API, request builder, stream translator
-  Session/           # SessionDirectory, SessionLog, HarnessEvent, logging and persistence modifiers
-  Workspace/         # Workspace: scoped folder and path resolution
-  Tools/             # ToolGate, Gated, PermissionPolicy, ToolAnnotations, ToolResultShaper
-  CodingTools/       # read, edit, write, shell, and their shared context
-  Memory/            # MemoryDirectory, MemoryInstructions, memory tools
-  Skills/            # SkillCatalog, SkillsInstructions, the skill tool
-  Instructions/      # InstructionFiles: AGENTS.md discovery
-  Subagents/         # TaskTool and SubagentDefinition
-  Context/           # ContextPolicy, masking, compaction
-  Runner/            # AgentConfiguration and AgentRunner
-  Evals/             # EvalTask, graders, EvalRunner
-  Scheduler/         # Job, JobStore, Scheduler, runners, delivery, cron
-Sources/HarnessCLI/  # the harness executable: run and eval
-evals/tasks/         # starter eval tasks
-  Support/           # JSONValue and the server-sent events parser
-Tests/HarnessTests/
-  Fixtures/          # captured OpenRouter streams used by the translator tests
-Research/            # the harness, memory, heartbeats, tools, and skills guides this design follows
+Sources/Harness/             # the general agent
+  OpenRouter/                # LanguageModel and executor for the Responses API, request builder, stream translator
+  Session/                   # SessionDirectory, SessionLog, HarnessEvent, logging and persistence modifiers
+  Workspace/                 # Workspace: scoped folder and path resolution
+  Files/                     # read, edit, and write, and their shared FileToolContext
+  Tools/                     # ToolGate, Gated, PermissionPolicy, ToolAnnotations, ToolResultShaper
+  Memory/                    # MemoryDirectory, MemoryInstructions, memory tools
+  Skills/                    # SkillCatalog, SkillsInstructions, the skill tool
+  Subagents/                 # TaskTool and SubagentDefinition
+  Context/                   # ContextPolicy, masking, compaction
+  Runner/                    # AgentConfiguration, AgentToolset, ToolList, AgentRunner
+  Scheduler/                 # Job, JobStore, Scheduler, runners, delivery, cron
+  UI/                        # AgentSession and UIPermissionPrompter
+  Support/                   # JSONValue, the server-sent events parser, TimeLimitError
+Sources/HarnessCoding/       # the coding agent, built on Harness
+  CodingTools/               # shell, background processes, ShellRules, CodingTools, CodingToolset
+  Instructions/              # InstructionFiles: AGENTS.md discovery
+  Evals/                     # EvalTask, graders, EvalRunner
+Sources/HarnessCLI/          # the harness executable: run, resume, sessions, eval, models
+Tests/HarnessTests/          # tests for Harness
+  Fixtures/                  # captured OpenRouter streams and the model listing
+Tests/HarnessCodingTests/    # tests for HarnessCoding
+Tests/HarnessTestSupport/    # EchoModel, a deterministic model both test targets use
+evals/tasks/                 # starter eval tasks
+Research/                    # the harness, memory, heartbeats, tools, and skills guides this design follows
 ```
 
 ## Usage
@@ -167,6 +174,7 @@ A session with gated coding tools, logging, and persistence:
 ```swift
 import FoundationModels
 import Harness
+import HarnessCoding
 
 let directory = try SessionDirectory(root: try SessionDirectory.defaultRoot())
 let log = try directory.makeLog()
@@ -212,9 +220,7 @@ The live suites call OpenRouter and run only when `OPENROUTER_API_KEY` is set. E
 
 ## Status
 
-Built and verified: the OpenRouter executor, the session log and persistence, the workspace, the permission gate and result shaping, the coding tools, memory, skills, instruction files, the sub-agent tool, context management, the runner, and evals. The library also builds for the iOS simulator, with the shell tool, background processes, and the process runner left out there. Views are left to the app; the package provides the observable session and prompter they bind to. The `Research/` guides describe each of those.
-
-**Open question:** whether to keep one `Harness` product or split the macOS-only shell and future coding additions into a separate product once an iOS app consumes the package.
+Built and verified: the OpenRouter executor, the session log and persistence, the workspace and file tools, the permission gate and result shaping, memory, skills, the sub-agent tool, context management, the runner and toolsets, and in `HarnessCoding` the shell, instruction files, and evals. Both libraries also build for the iOS simulator; `HarnessCoding` leaves out the shell tool, background processes, and the process runner there. Views are left to the app; the package provides the observable session and prompter they bind to. The `Research/` guides describe each of those.
 
 ## TODO
 

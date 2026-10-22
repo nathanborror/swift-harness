@@ -24,9 +24,9 @@ public struct EditTool: AnnotatedTool {
     public let name: String
     public let description = "Edits a file by replacing exact text. Each old_text must appear exactly once unless replace_all is set. Read the file first; the edit is refused if the file changed since."
     public let annotations: ToolAnnotations = .mutating
-    let context: CodingToolContext
+    let context: FileToolContext
 
-    public init(context: CodingToolContext, name: String = "edit") {
+    public init(context: FileToolContext, name: String = "edit") {
         self.context = context
         self.name = name
     }
@@ -34,8 +34,8 @@ public struct EditTool: AnnotatedTool {
     public func call(arguments: Arguments) async throws -> String {
         let url = try context.workspace.url(for: arguments.path)
         switch await context.reads.status(of: url) {
-        case .unread: throw CodingToolError.notRead(path: arguments.path)
-        case .changed: throw CodingToolError.changedSinceRead(path: arguments.path)
+        case .unread: throw FileToolError.notRead(path: arguments.path)
+        case .changed: throw FileToolError.changedSinceRead(path: arguments.path)
         case .unchanged: break
         }
         let path = arguments.path
@@ -49,7 +49,7 @@ public struct EditTool: AnnotatedTool {
     }
 
     static func apply(_ edits: [(old: String, new: String)], to url: URL, path: String, replaceAll: Bool) throws -> String {
-        let (original, hasBOM) = try CodingToolSupport.readFile(at: url, path: path)
+        let (original, hasBOM) = try FileToolSupport.readFile(at: url, path: path)
         let usesCRLF = original.contains("\r\n")
         var working = original
         if usesCRLF { working = working.replacingOccurrences(of: "\r\n", with: "\n") }
@@ -58,10 +58,10 @@ public struct EditTool: AnnotatedTool {
         for (index, edit) in edits.enumerated() {
             let occurrences = working.components(separatedBy: edit.old).count - 1
             guard !edit.old.isEmpty, occurrences > 0 else {
-                throw CodingToolError.textNotFound(path: path, index: index)
+                throw FileToolError.textNotFound(path: path, index: index)
             }
             if occurrences > 1, !replaceAll {
-                throw CodingToolError.textNotUnique(path: path, index: index, occurrences: occurrences)
+                throw FileToolError.textNotUnique(path: path, index: index, occurrences: occurrences)
             }
             working = working.replacingOccurrences(of: edit.old, with: edit.new)
             replacements += occurrences
@@ -70,7 +70,7 @@ public struct EditTool: AnnotatedTool {
         var output = working
         if usesCRLF { output = output.replacingOccurrences(of: "\n", with: "\r\n") }
         var bytes = Data(output.utf8)
-        if hasBOM { bytes = CodingToolSupport.utf8BOM + bytes }
+        if hasBOM { bytes = FileToolSupport.utf8BOM + bytes }
         try bytes.write(to: url, options: [.atomic])
         return "Edited \(path): \(replacements) replacement\(replacements == 1 ? "" : "s")."
     }

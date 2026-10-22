@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import Harness
 import FoundationModels
 
 /// Long-running commands the model started and may check on later.

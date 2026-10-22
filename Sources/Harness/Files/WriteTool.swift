@@ -14,9 +14,9 @@ public struct WriteTool: AnnotatedTool {
     public let name: String
     public let description = "Creates a file or replaces its entire contents. Parent folders are created. Use it for new files and complete rewrites; use edit for changes. An existing file must be read before it is overwritten."
     public let annotations: ToolAnnotations = .mutating
-    let context: CodingToolContext
+    let context: FileToolContext
 
-    public init(context: CodingToolContext, name: String = "write") {
+    public init(context: FileToolContext, name: String = "write") {
         self.context = context
         self.name = name
     }
@@ -25,11 +25,11 @@ public struct WriteTool: AnnotatedTool {
         let url = try context.workspace.url(for: arguments.path)
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        if exists, isDirectory.boolValue { throw CodingToolError.isDirectory(path: arguments.path) }
+        if exists, isDirectory.boolValue { throw FileToolError.isDirectory(path: arguments.path) }
         if exists {
             switch await context.reads.status(of: url) {
-            case .unread: throw CodingToolError.notRead(path: arguments.path)
-            case .changed: throw CodingToolError.changedSinceRead(path: arguments.path)
+            case .unread: throw FileToolError.notRead(path: arguments.path)
+            case .changed: throw FileToolError.changedSinceRead(path: arguments.path)
             case .unchanged: break
             }
         }

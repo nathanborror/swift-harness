@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+import HarnessTestSupport
 
 @Suite struct TaskToolTests {
     @Test func echoModelDrivesASession() async throws {

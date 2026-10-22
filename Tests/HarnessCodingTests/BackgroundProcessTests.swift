@@ -3,6 +3,7 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+@testable import HarnessCoding
 
 @Suite struct BackgroundProcessTests {
     private func makeTools() throws -> CodingTools {
@@ -51,37 +52,3 @@ import Testing
     }
 }
 #endif
-
-@Suite struct SchedulerWakeTests {
-    @Test func eventsWakeTheHeartbeatWithinTheRateLimit() async throws {
-        let store = try JobStore(root: FileManager.default.temporaryDirectory.appending(path: "harness-jobs-\(UUID().uuidString)"))
-        let clock = Clock(Date(timeIntervalSince1970: 1_800_000_000))
-        let runner = ScriptedRunner([])
-        var policy = Scheduler.Policy()
-        policy.wakeInterval = 30
-        policy.wakeFloodLimit = 2
-        policy.wakeFloodWindow = 120
-        let scheduler = Scheduler(store: store, runner: runner, delivery: InboxDelivery(store: store), policy: policy, clock: { clock.now })
-        try await scheduler.add(Job.heartbeat(every: 600))
-
-        let first = await scheduler.enqueue(event: "bg_1 exited with code 0")
-        #expect(first?.status == .ok, "an empty checklist does not block a wake that carries an event")
-        let wake = try #require(await runner.wakes.last)
-        #expect(wake.events == ["bg_1 exited with code 0"])
-        #expect(wake.rendered().contains("Events since the last run:\n- bg_1 exited"))
-
-        let second = await scheduler.enqueue(event: "bg_2 exited")
-        #expect(second == nil, "within the wake interval the event waits")
-        clock.advance(31)
-        let third = await scheduler.enqueue(event: "bg_3 exited")
-        #expect(third?.status == .ok)
-        #expect(await runner.wakes.last?.events == ["bg_2 exited", "bg_3 exited"], "queued events are drained together")
-
-        clock.advance(31)
-        #expect(await scheduler.enqueue(event: "bg_4 exited") == nil, "the flood guard caps wakes per window")
-        clock.advance(600)
-        let tick = await scheduler.tick()
-        #expect(tick.first?.status == .ok)
-        #expect(await runner.wakes.last?.events == ["bg_4 exited"], "a regular tick drains what the guard held back")
-    }
-}

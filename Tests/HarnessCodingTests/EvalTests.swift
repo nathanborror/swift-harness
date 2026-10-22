@@ -2,6 +2,8 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+@testable import HarnessCoding
+import HarnessTestSupport
 
 @Suite struct EvalTests {
     @Test func decodesTaskJSONWithGraders() throws {

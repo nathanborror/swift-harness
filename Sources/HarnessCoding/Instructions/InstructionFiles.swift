@@ -1,4 +1,5 @@
 import Foundation
+import Harness
 import FoundationModels
 
 /// Human-written instruction files found in the workspace, such as `AGENTS.md`.

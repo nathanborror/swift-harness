@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+import HarnessTestSupport
 
 @Suite struct ContextManagementTests {
     private func output(_ index: Int, size: Int = 400) -> Transcript.Entry {

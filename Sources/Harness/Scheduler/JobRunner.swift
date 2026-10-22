@@ -154,7 +154,7 @@ public struct AgentJobRunner: JobRunner {
             group.addTask { try await session.respond(to: wake.rendered()).content }
             group.addTask {
                 try await Task.sleep(for: .seconds(wake.job.limits.timeoutSeconds))
-                throw CodingToolError.timeout(seconds: wake.job.limits.timeoutSeconds)
+                throw TimeLimitError(seconds: wake.job.limits.timeoutSeconds)
             }
             let first = try await group.next()!
             group.cancelAll()

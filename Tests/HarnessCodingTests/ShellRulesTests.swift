@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import Testing
 @testable import Harness
+@testable import HarnessCoding
 
 @Suite struct ShellRulesTests {
     private func decision(_ command: String, policy: PermissionPolicy = .coding) throws -> PermissionDecision {

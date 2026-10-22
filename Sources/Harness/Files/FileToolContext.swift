@@ -1,24 +1,18 @@
 import Foundation
 import FoundationModels
 
-/// Shared state for the coding tools: where they may work, what the model has
-/// read, and a lock that serializes edits.
-public final class CodingToolContext: Sendable {
+/// Shared state for the file tools: the folder they may work in, what the
+/// model has read, and a lock that serializes edits.
+public final class FileToolContext: Sendable {
     public struct Limits: Sendable, Equatable {
         /// Lines returned by one read when no limit is given.
         public var readLines: Int
         /// Bytes returned by one read at most.
         public var readBytes: Int
-        /// Shell time limit when the model gives none.
-        public var shellTimeout: TimeInterval
-        /// The longest time limit the model may ask for.
-        public var shellTimeoutMaximum: TimeInterval
 
-        public init(readLines: Int = 2_000, readBytes: Int = 50_000, shellTimeout: TimeInterval = 120, shellTimeoutMaximum: TimeInterval = 600) {
+        public init(readLines: Int = 2_000, readBytes: Int = 50_000) {
             self.readLines = readLines
             self.readBytes = readBytes
-            self.shellTimeout = shellTimeout
-            self.shellTimeoutMaximum = shellTimeoutMaximum
         }
     }
 
@@ -26,19 +20,12 @@ public final class CodingToolContext: Sendable {
     public let limits: Limits
     let reads: FileReadRegistry
     let edits: EditSerializer
-    #if os(macOS)
-    /// Long-running commands, when the shell tool may run in the background.
-    public let processes: BackgroundProcessManager?
-    #endif
 
-    public init(workspace: Workspace, limits: Limits = Limits(), backgroundOutputs: URL? = nil) {
+    public init(workspace: Workspace, limits: Limits = Limits()) {
         self.workspace = workspace
         self.limits = limits
         self.reads = FileReadRegistry()
         self.edits = EditSerializer()
-        #if os(macOS)
-        self.processes = backgroundOutputs.map { BackgroundProcessManager(outputsDirectory: $0) }
-        #endif
     }
 }
 
@@ -81,7 +68,7 @@ actor EditSerializer {
     }
 }
 
-public enum CodingToolError: Error, Sendable, LocalizedError, Equatable {
+public enum FileToolError: Error, Sendable, LocalizedError, Equatable {
     case notFound(path: String, suggestions: [String])
     case notUTF8(path: String)
     case notRead(path: String)
@@ -89,7 +76,6 @@ public enum CodingToolError: Error, Sendable, LocalizedError, Equatable {
     case textNotFound(path: String, index: Int)
     case textNotUnique(path: String, index: Int, occurrences: Int)
     case isDirectory(path: String)
-    case timeout(seconds: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -98,7 +84,7 @@ public enum CodingToolError: Error, Sendable, LocalizedError, Equatable {
             if !suggestions.isEmpty { text += "\nDid you mean one of these?\n" + suggestions.map { "  \($0)" }.joined(separator: "\n") }
             return text
         case .notUTF8(let path):
-            return "\(path) is not UTF-8 text. Use the shell to inspect binary files."
+            return "\(path) is not UTF-8 text, so it cannot be read or edited as text."
         case .notRead(let path):
             return "\(path) has not been read in this session. Read it first, then edit or overwrite it."
         case .changedSinceRead(let path):
@@ -109,13 +95,11 @@ public enum CodingToolError: Error, Sendable, LocalizedError, Equatable {
             return "Edit \(index + 1): old_text appears \(occurrences) times in \(path). Include more surrounding context so it matches exactly once, or set replace_all to true."
         case .isDirectory(let path):
             return "\(path) is a directory."
-        case .timeout(let seconds):
-            return "Command did not complete within \(seconds) seconds and was killed. If it needs longer and is not waiting for input, retry with a larger timeout_seconds."
         }
     }
 }
 
-enum CodingToolSupport {
+enum FileToolSupport {
     static let utf8BOM = Data([0xEF, 0xBB, 0xBF])
 
     static func readText(at url: URL, path: String) throws -> String {
@@ -129,12 +113,12 @@ enum CodingToolSupport {
         do {
             data = try Data(contentsOf: url)
         } catch {
-            throw CodingToolError.notFound(path: path, suggestions: suggestions(for: url))
+            throw FileToolError.notFound(path: path, suggestions: suggestions(for: url))
         }
         let hasBOM = data.starts(with: utf8BOM)
         if hasBOM { data.removeFirst(utf8BOM.count) }
         guard let text = String(data: data, encoding: .utf8) else {
-            throw CodingToolError.notUTF8(path: path)
+            throw FileToolError.notUTF8(path: path)
         }
         return (text, hasBOM)
     }

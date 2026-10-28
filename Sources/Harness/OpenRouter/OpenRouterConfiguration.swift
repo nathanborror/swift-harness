@@ -17,6 +17,11 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
         /// Read a generic-password Keychain item at request time, so a key
         /// rotated in the app's settings takes effect on the next call. A
         /// missing item fails the request with `missingCredential`.
+        ///
+        /// On macOS the data protection keychain is searched first, then the
+        /// login keychain, so a signed app reads its item without a prompt
+        /// while a command-line tool without an application identifier still
+        /// finds one saved with `security add-generic-password`.
         case keychain(service: String, account: String)
         /// Send no bearer token. Use with a proxy at `baseURL` that attaches the real key.
         case none
@@ -90,10 +95,20 @@ public struct OpenRouterConfiguration: Hashable, Sendable {
 
     /// The UTF-8 value of a generic-password item, or nil when there is none.
     static func keychainItem(service: String, account: String) -> String? {
+        #if os(macOS)
+        keychainItem(service: service, account: account, dataProtection: true)
+            ?? keychainItem(service: service, account: account, dataProtection: false)
+        #else
+        keychainItem(service: service, account: account, dataProtection: true)
+        #endif
+    }
+
+    private static func keychainItem(service: String, account: String, dataProtection: Bool) -> String? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
+            kSecUseDataProtectionKeychain: dataProtection,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
         ]
